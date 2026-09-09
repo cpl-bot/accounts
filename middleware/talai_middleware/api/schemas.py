@@ -111,6 +111,12 @@ class SettingsUpdate(BaseModel):
 # --------------------------------------------------------------------------
 
 
+LedgerSource = Literal["tally", "talai"]
+BillDirection = Literal["payable", "receivable"]
+SyncKind = Literal["pull", "push"]
+SyncStatus = Literal["running", "success", "failed"]
+
+
 class LedgerOut(ORMModel):
     id: int
     name: str
@@ -123,7 +129,7 @@ class LedgerOut(ORMModel):
     state: str | None = None
     gst_registration_type: str | None = None
     is_bill_wise: bool = False
-    source: str = "tally"
+    source: LedgerSource = "tally"
 
 
 class LedgerList(BaseModel):
@@ -254,7 +260,7 @@ class BillOut(ORMModel):
     due_date: date | None
     opening_amount: Decimal
     pending_amount: Decimal
-    direction: str
+    direction: BillDirection
 
 
 class AgingBucket(BaseModel):
@@ -424,9 +430,9 @@ class ValidationResult(BaseModel):
 
 class SyncRunOut(ORMModel):
     id: int
-    kind: str
+    kind: SyncKind
     scope: str
-    status: str
+    status: SyncStatus
     started_at: datetime
     finished_at: datetime | None = None
     records_seen: int
