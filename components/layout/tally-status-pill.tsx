@@ -13,12 +13,20 @@ export function TallyStatusPill() {
     if (error || !data) {
       color = 'bg-destructive'
       label = 'Tally unreachable'
-    } else if (data.connected) {
-      color = 'bg-success'
-      label = data.company ? `Connected — ${data.company}` : 'Connected'
-    } else {
+    } else if (data.breaker_open) {
+      color = 'bg-destructive'
+      label = 'Tally circuit open'
+    } else if (!data.reachable) {
+      color = 'bg-destructive'
+      label = data.error ? `Tally unreachable — ${data.error}` : 'Tally unreachable'
+    } else if (!data.company_match) {
       color = 'bg-amber-500'
-      label = 'Not connected'
+      label = data.expected_company
+        ? `Wrong company open — expected ${data.expected_company}`
+        : 'Wrong company open'
+    } else {
+      color = 'bg-success'
+      label = data.active_company ? `Connected — ${data.active_company}` : 'Connected'
     }
   }
 
