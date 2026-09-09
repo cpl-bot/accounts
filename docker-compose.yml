@@ -1,0 +1,33 @@
+services:
+  middleware:
+    build:
+      context: ./middleware
+    env_file: ./middleware/.env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      DATABASE_URL: sqlite:////data/talai.db
+      UPLOAD_DIR: /data/uploads
+    volumes:
+      - talai-data:/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    env_file: ./.env
+    environment:
+      MIDDLEWARE_URL: http://middleware:8000
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    depends_on:
+      - middleware
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  talai-data:

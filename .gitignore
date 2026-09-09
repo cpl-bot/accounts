@@ -34,3 +34,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python / middleware
+__pycache__/
+*.pyc
+.venv/
+middleware/data/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
