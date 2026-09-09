@@ -17,6 +17,7 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { BillsTable } from '@/components/ap/bills-table'
 import { UploadModal } from '@/components/ap/upload-modal'
 import { SyncModal } from '@/components/ap/sync-modal'
+import { AttachmentsList } from '@/components/ap/attachments-list'
 import { useBills, useDrafts } from '@/lib/api/hooks'
 import type { Bill } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
@@ -62,6 +63,7 @@ export default function AccountsPayablePage() {
       draftsQuery.data?.items.map((d, i) => {
         const payload = d.payload as { party?: { ledger_name?: string }; totals?: { grand_total?: number } }
         const hasErrors = d.validation_issues.some((issue) => issue.severity === 'error')
+        const needsReview = d.needs_review || hasErrors
         return {
           id: fromBills.length + i + 1,
           voucherNo: fromBills.length + i + 1,
@@ -70,12 +72,28 @@ export default function AccountsPayablePage() {
           billingDate: d.created_at.slice(0, 10),
           voucherDate: d.updated_at.slice(0, 10),
           totalAmount: payload.totals?.grand_total ?? 0,
-          status: hasErrors ? ('needs_review' as const) : ('uploaded' as const),
+          status: needsReview ? ('needs_review' as const) : ('uploaded' as const),
           synced: false,
         }
       }) ?? []
 
     return [...fromBills, ...fromDrafts]
+  }, [billsQuery.data, draftsQuery.data])
+
+  // Reasons a draft is in the Needs Review queue — validation errors and/or
+  // the middleware's own `review_reasons` (typically low OCR confidence).
+  // Keyed by the same 1-based index scheme `bills` uses for draft rows above.
+  const reviewReasonsById = useMemo(() => {
+    const map = new Map<number, string[]>()
+    const offset = billsQuery.data?.items.length ?? 0
+    draftsQuery.data?.items.forEach((d, i) => {
+      const reasons = [
+        ...d.validation_issues.filter((issue) => issue.severity === 'error').map((issue) => issue.message),
+        ...(d.review_reasons ?? []),
+      ]
+      if (reasons.length > 0) map.set(offset + i + 1, reasons)
+    })
+    return map
   }, [billsQuery.data, draftsQuery.data])
 
   const filtered = useMemo(() => {
@@ -175,7 +193,9 @@ export default function AccountsPayablePage() {
             </div>
           ) : null}
 
-          {loading && bills.length === 0 ? (
+          {tab === 'uploads' ? (
+            <AttachmentsList />
+          ) : loading && bills.length === 0 ? (
             <div className="flex items-center justify-center gap-2 rounded-xl border border-border p-16 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" /> Loading bills…
             </div>
@@ -194,6 +214,8 @@ export default function AccountsPayablePage() {
                 Retry
               </Button>
             </div>
+          ) : tab === 'review' ? (
+            <NeedsReviewTable bills={filtered} reasonsById={reviewReasonsById} />
           ) : (
             <BillsTable
               bills={filtered}
@@ -208,5 +230,50 @@ export default function AccountsPayablePage() {
       <UploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} />
       <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} />
     </>
+  )
+}
+
+// Needs Review = drafts with needs_review=true or a blocking validation
+// error (see reviewReasonsById above). A dedicated table (rather than
+// BillsTable) so it can carry a Reasons column.
+function NeedsReviewTable({
+  bills,
+  reasonsById,
+}: {
+  bills: Bill[]
+  reasonsById: Map<number, string[]>
+}) {
+  if (bills.length === 0) {
+    return (
+      <div className="rounded-xl border border-border p-16 text-center text-sm text-muted-foreground">
+        Nothing needs review.
+      </div>
+    )
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full min-w-[720px] text-sm">
+        <thead>
+          <tr className="border-b border-border bg-muted/40 text-left text-muted-foreground">
+            <th className="px-4 py-3 font-medium">Vendor</th>
+            <th className="px-4 py-3 font-medium">Bill Date</th>
+            <th className="px-4 py-3 text-right font-medium">Amount</th>
+            <th className="px-4 py-3 font-medium">Reasons</th>
+          </tr>
+        </thead>
+        <tbody>
+          {bills.map((b) => (
+            <tr key={b.id} className="border-b border-border/60 last:border-0 align-top">
+              <td className="px-4 py-3 font-medium">{b.vendor}</td>
+              <td className="px-4 py-3 text-muted-foreground">{b.billingDate}</td>
+              <td className="px-4 py-3 text-right tabular-nums">{b.totalAmount}</td>
+              <td className="px-4 py-3 text-muted-foreground">
+                {(reasonsById.get(b.id) ?? []).join('; ') || '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

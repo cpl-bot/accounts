@@ -1,7 +1,8 @@
 'use client'
 
-import { useMemo, useState } from 'react'
-import { Plus, Trash2, Sparkles, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Plus, Trash2, Sparkles, AlertTriangle, Loader2, CheckCircle2, CircleCheck } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +10,8 @@ import { Field, Input, Select, Textarea, Label } from '@/components/ui/field'
 import { formatINR } from '@/lib/format'
 import { apiFetch, ApiError } from '@/lib/api/client'
 import { draftPurchaseBillSchema, draftSchema, type Draft, type DraftPurchaseBill } from '@/lib/api/schema'
+import { useAttachment, useDraft, useLedgerLookup } from '@/lib/api/hooks'
+import { OCR_MIN_CONFIDENCE } from '@/lib/api/schema'
 
 type LineItem = {
   id: number
@@ -58,6 +61,11 @@ function Section({
 let nextId = 100
 
 export function CreateBillForm() {
+  const searchParams = useSearchParams()
+  const draftId = searchParams?.get('draft') ?? null
+  const existingDraftQuery = useDraft(draftId)
+  const prefilledRef = useRef<string | null>(null)
+
   const [voucherDate, setVoucherDate] = useState('2026-06-10')
   const [billDate, setBillDate] = useState('2026-05-10')
   const [dueDate, setDueDate] = useState('2026-06-09')
@@ -79,6 +87,8 @@ export function CreateBillForm() {
   const [gstin, setGstin] = useState('27AAECB1234D1Z5')
   const [sourceOfSupply, setSourceOfSupply] = useState('Maharashtra')
   const [destinationOfSupply, setDestinationOfSupply] = useState('Maharashtra')
+  const [createIfMissing, setCreateIfMissing] = useState(false)
+  const [mailingName, setMailingName] = useState('')
 
   const [items, setItems] = useState<LineItem[]>([
     {
@@ -102,6 +112,57 @@ export function CreateBillForm() {
   const [saving, setSaving] = useState<'idle' | 'saving' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [queueState, setQueueState] = useState<'idle' | 'queuing' | 'queued' | 'error'>('idle')
+
+  const ledgerLookup = useLedgerLookup(vendorName)
+  const attachmentId = draft?.attachment_id ?? existingDraftQuery.data?.attachment_id ?? null
+  const attachmentQuery = useAttachment(attachmentId ?? null)
+  const confidence = attachmentQuery.data?.ocr_result?.confidence ?? {}
+
+  // Prefill every field from a loaded draft the first (and only the first)
+  // time it arrives, so a later refetch (e.g. after Save) doesn't clobber
+  // edits the user has since made.
+  useEffect(() => {
+    const loaded = existingDraftQuery.data
+    if (!loaded || prefilledRef.current === loaded.id) return
+    prefilledRef.current = loaded.id
+    setDraft(loaded)
+    const payload = loaded.payload as Partial<DraftPurchaseBill> & Record<string, unknown>
+    /* eslint-disable react-hooks/set-state-in-effect -- intentional: prefills the form's editable state from a draft fetched via ?draft=<id>, once. */
+    if (payload.voucher_date) setVoucherDate(String(payload.voucher_date))
+    if (payload.bill_date) setBillDate(String(payload.bill_date))
+    if (payload.due_date) setDueDate(String(payload.due_date))
+    if (payload.supplier_invoice_no) setSupplierInvoiceNo(String(payload.supplier_invoice_no))
+    if (payload.gst_registration) setGstRegistration(String(payload.gst_registration))
+    if (payload.voucher_type) setVoucherType(String(payload.voucher_type))
+    if (payload.cost_centre) setCostCentre(String(payload.cost_centre))
+    if (payload.purchase_ledger) setPurchaseLedger(String(payload.purchase_ledger))
+    if (typeof payload.reverse_charge === 'boolean') setReverseCharge(payload.reverse_charge)
+    if (payload.narration) setNarration(String(payload.narration))
+    const party = payload.party as DraftPurchaseBill['party'] | undefined
+    if (party) {
+      if (party.ledger_name) setVendorName(party.ledger_name)
+      if (party.gst_treatment) setGstTreatment(party.gst_treatment)
+      if (party.billing_address) setBillingAddress(party.billing_address)
+      if (party.gstin) setGstin(party.gstin)
+      if (party.source_of_supply) setSourceOfSupply(party.source_of_supply)
+      if (party.destination_of_supply) setDestinationOfSupply(party.destination_of_supply)
+    }
+    const loadedItems = payload.items as DraftPurchaseBill['items'] | undefined
+    if (loadedItems && loadedItems.length > 0) {
+      setItems(
+        loadedItems.map((it) => ({
+          id: ++nextId,
+          description: it.description,
+          item: it.stock_item ?? '',
+          godown: it.godown ?? '',
+          quantity: it.quantity,
+          rate: it.rate,
+          hsn: it.hsn ?? '',
+        })),
+      )
+    }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [existingDraftQuery.data])
 
   const taxableValue = useMemo(
     () => items.reduce((s, i) => s + i.quantity * i.rate, 0),
@@ -144,6 +205,10 @@ export function CreateBillForm() {
         billing_address: billingAddress,
         source_of_supply: sourceOfSupply,
         destination_of_supply: destinationOfSupply,
+        create_if_missing: createIfMissing,
+        ...(createIfMissing
+          ? { gst_registration_type: gstTreatment, mailing_name: mailingName || vendorName }
+          : {}),
       },
       purchase_ledger: purchaseLedger,
       items: items.map((i) => ({
@@ -191,10 +256,15 @@ export function CreateBillForm() {
       return
     }
     try {
-      const created = await apiFetch('drafts', draftSchema, {
-        method: 'POST',
-        body: JSON.stringify(parsed.data),
-      })
+      const created = draftId
+        ? await apiFetch(`drafts/${draftId}`, draftSchema, {
+            method: 'PUT',
+            body: JSON.stringify(parsed.data),
+          })
+        : await apiFetch('drafts', draftSchema, {
+            method: 'POST',
+            body: JSON.stringify(parsed.data),
+          })
       setDraft(created)
       setSaving('idle')
     } catch (err) {
@@ -219,8 +289,26 @@ export function CreateBillForm() {
   const warnings = draft?.validation_issues.filter((i) => i.severity === 'warning') ?? []
   const canQueue = draft != null && blockingIssues.length === 0 && draft.status !== 'queued'
 
+  const needsReview = draft?.needs_review || existingDraftQuery.data?.needs_review
+  const reviewReasons = draft?.review_reasons?.length
+    ? draft.review_reasons
+    : (existingDraftQuery.data?.review_reasons ?? [])
+
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+      {needsReview ? (
+        <div className="xl:col-span-3">
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="font-medium">Needs review</p>
+              {reviewReasons.length > 0 ? (
+                <p className="text-amber-700/90 dark:text-amber-400/90">{reviewReasons.join('; ')}</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-5 xl:col-span-2">
         {/* Details */}
         <Section
@@ -271,9 +359,71 @@ export function CreateBillForm() {
         {/* Vendor details */}
         <Section title="Vendor Details">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Name">
-              <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
-            </Field>
+            <div className="sm:col-span-2">
+              <Field label="Name">
+                <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
+              </Field>
+              <ConfidenceBadge field="supplier_name" confidence={confidence} />
+              {ledgerLookup.data?.found ? (
+                <p className="mt-1.5 flex items-center gap-1.5 text-xs text-success">
+                  <CircleCheck className="size-3.5" /> Matches Tally ledger
+                </p>
+              ) : null}
+              {ledgerLookup.data && !ledgerLookup.data.found ? (
+                <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                  <p className="font-medium text-amber-700 dark:text-amber-400">
+                    Tally has no ledger named &quot;{vendorName}&quot;
+                  </p>
+                  {ledgerLookup.data.suggestions.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {ledgerLookup.data.suggestions.map((s) => (
+                        <button
+                          key={s.name}
+                          type="button"
+                          onClick={() => setVendorName(s.name)}
+                          className="rounded-full border border-border bg-background px-2.5 py-1 text-xs hover:bg-accent"
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <label className="mt-2.5 flex items-center gap-2 text-foreground">
+                    <input
+                      type="checkbox"
+                      className="size-4 accent-primary"
+                      checked={createIfMissing}
+                      onChange={(e) => setCreateIfMissing(e.target.checked)}
+                    />
+                    Create this vendor ledger in Tally with this bill
+                  </label>
+                  {createIfMissing ? (
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <Field label="Mailing Name">
+                        <Input
+                          value={mailingName}
+                          placeholder={vendorName}
+                          onChange={(e) => setMailingName(e.target.value)}
+                        />
+                      </Field>
+                      <Field label="State">
+                        <Input value={sourceOfSupply} onChange={(e) => setSourceOfSupply(e.target.value)} />
+                      </Field>
+                      <Field label="GSTIN" className="sm:col-span-2">
+                        <Input value={gstin} onChange={(e) => setGstin(e.target.value)} />
+                      </Field>
+                      <Field label="Billing Address" className="sm:col-span-2">
+                        <Textarea
+                          rows={2}
+                          value={billingAddress}
+                          onChange={(e) => setBillingAddress(e.target.value)}
+                        />
+                      </Field>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
             <Field label="GST Treatment">
               <Select
                 value={gstTreatment}
@@ -556,6 +706,30 @@ export function CreateBillForm() {
         </Card>
       </div>
     </div>
+  )
+}
+
+function ConfidenceBadge({
+  field,
+  confidence,
+}: {
+  field: string
+  confidence: Record<string, number>
+}) {
+  const score = confidence[field]
+  if (score === undefined) return null
+  const low = score < OCR_MIN_CONFIDENCE
+  return (
+    <span
+      className={
+        'mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ' +
+        (low
+          ? 'bg-amber-500/12 text-amber-700 dark:text-amber-400'
+          : 'bg-muted text-muted-foreground')
+      }
+    >
+      OCR confidence {Math.round(score * 100)}%
+    </span>
   )
 }
 

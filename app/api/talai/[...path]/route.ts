@@ -2,9 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import {
   demoAttachments,
   demoBills,
+  demoDashboardFormula,
   demoDashboardOverview,
   demoDashboardPayables,
   demoDrafts,
+  demoLedgerLookup,
+  demoLedgers,
   demoSettings,
   demoSyncRun,
   demoTallyStatus,
@@ -20,7 +23,7 @@ function errorResponse(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-function demoResponse(path: string, method: string): NextResponse | null {
+function demoResponse(path: string, method: string, searchParams?: URLSearchParams): NextResponse | null {
   const segments = path.split('/').filter(Boolean)
 
   if (method === 'GET' && path === 'tally/status') return NextResponse.json(demoTallyStatus())
@@ -52,13 +55,53 @@ function demoResponse(path: string, method: string): NextResponse | null {
     const list = demoAttachments()
     return NextResponse.json(list[0] ?? null)
   }
+  if (method === 'GET' && path === 'attachments') {
+    const items = demoAttachments()
+    return NextResponse.json({ items, total: items.length })
+  }
+  if (method === 'GET' && segments[0] === 'attachments' && segments.length === 2) {
+    const found = demoAttachments().find((a) => a.id === segments[1]) ?? demoAttachments()[0]
+    return NextResponse.json(found ?? null)
+  }
+  if (method === 'POST' && segments[0] === 'attachments' && segments[2] === 'ocr') {
+    const found = demoAttachments().find((a) => a.id === segments[1]) ?? demoAttachments()[0]
+    return NextResponse.json(found ?? null)
+  }
+  if (method === 'POST' && segments[0] === 'attachments' && segments[2] === 'draft') {
+    return NextResponse.json({
+      id: `draft-from-${segments[1]}`,
+      status: 'validated',
+      payload: {},
+      validation_issues: [],
+      needs_review: true,
+      review_reasons: ['Low OCR confidence'],
+      attachment_id: segments[1],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+  }
+  if (method === 'GET' && segments[0] === 'ledgers' && segments[1] === 'lookup') {
+    return NextResponse.json(demoLedgerLookup(searchParams?.get('name') ?? ''))
+  }
+  if (method === 'GET' && path === 'ledgers') {
+    const items = demoLedgers()
+    return NextResponse.json({ items, total: items.length })
+  }
+  if (method === 'POST' && path === 'ledgers') {
+    return NextResponse.json({
+      dry_run: true,
+      generated_xml: '<ENVELOPE/>',
+      ledger: { name: 'New Vendor', parent: 'Sundry Creditors', source: 'talai' },
+    })
+  }
+  if (path === 'settings/dashboard') return NextResponse.json(demoDashboardFormula())
 
   return null
 }
 
 async function forward(req: NextRequest, path: string) {
   if (isDemoMode()) {
-    const demo = demoResponse(path, req.method)
+    const demo = demoResponse(path, req.method, req.nextUrl.searchParams)
     if (demo) return demo
     // Fall through to a generic "not implemented in demo mode" 200 for
     // anything not explicitly modelled above, so the UI can still render.

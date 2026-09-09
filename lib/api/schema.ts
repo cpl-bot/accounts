@@ -52,8 +52,36 @@ export const ledgerSchema = z.object({
   parent: z.string(),
   opening_balance: z.number().optional(),
   gstin: z.string().nullable().optional(),
+  source: z.enum(['tally', 'talai']).optional(),
 })
 export type Ledger = z.infer<typeof ledgerSchema>
+
+// --- Vendor ledger lookup / creation (§3.8) ---------------------------------
+
+export const ledgerLookupResultSchema = z.object({
+  found: z.boolean(),
+  ledger: ledgerSchema.nullable().optional(),
+  suggestions: z.array(ledgerSchema.extend({ ratio: z.number().optional() })).default([]),
+  best_ratio: z.number().nullable().optional(),
+})
+export type LedgerLookupResult = z.infer<typeof ledgerLookupResultSchema>
+
+export const vendorLedgerCreateSchema = z.object({
+  name: z.string().min(1),
+  gst_registration_type: z.enum(['regular', 'composition', 'unregistered']),
+  gstin: z.string().nullable().optional(),
+  state: z.string().min(1),
+  billing_address: z.string().min(1),
+  mailing_name: z.string().optional(),
+})
+export type VendorLedgerCreate = z.infer<typeof vendorLedgerCreateSchema>
+
+export const vendorLedgerCreateResultSchema = z.object({
+  dry_run: z.boolean().optional(),
+  generated_xml: z.string().optional(),
+  ledger: ledgerSchema.optional(),
+})
+export type VendorLedgerCreateResult = z.infer<typeof vendorLedgerCreateResultSchema>
 
 export const groupSchema = z.object({
   name: z.string(),
@@ -146,6 +174,18 @@ export const billsResponseSchema = z.object({
 })
 export type BillsResponse = z.infer<typeof billsResponseSchema>
 
+// --- Configurable gross-profit formula (§3.9) -------------------------------
+
+export const dashboardFormulaSchema = z.object({
+  gross_profit_mode: z.enum(['simple', 'trading']),
+  stock_source: z.enum(['tally', 'manual']),
+  manual_opening_stock: z.string().nullable().optional(),
+  manual_closing_stock: z.string().nullable().optional(),
+  revenue_groups: z.array(z.string()).default([]),
+  cost_of_sales_groups: z.array(z.string()).default([]),
+})
+export type DashboardFormula = z.infer<typeof dashboardFormulaSchema>
+
 export const dashboardOverviewSchema = z.object({
   gross_profit: z.object({ value: z.number(), change_pct: z.number() }),
   cash_bank: z.object({
@@ -173,6 +213,10 @@ export const dashboardOverviewSchema = z.object({
     ),
     cash_flow: z.array(z.object({ month: z.string(), inflow: z.number(), outflow: z.number() })),
   }),
+  formula: dashboardFormulaSchema.optional(),
+  opening_stock: z.number().nullable().optional(),
+  closing_stock: z.number().nullable().optional(),
+  stock_adjustment_status: z.enum(['applied', 'manual', 'unavailable']).optional(),
 })
 export type DashboardOverview = z.infer<typeof dashboardOverviewSchema>
 
@@ -199,11 +243,17 @@ export const dashboardPayablesSchema = z.object({
 })
 export type DashboardPayables = z.infer<typeof dashboardPayablesSchema>
 
+export const validationIssueDetailsSchema = z.object({
+  can_create: z.boolean().optional(),
+  suggestions: z.array(ledgerSchema.extend({ ratio: z.number().optional() })).optional(),
+})
+
 export const validationIssueSchema = z.object({
   code: z.string(),
   field: z.string().nullable(),
   message: z.string(),
   severity: z.enum(['error', 'warning']),
+  details: validationIssueDetailsSchema.nullable().optional(),
 })
 export type ValidationIssue = z.infer<typeof validationIssueSchema>
 
@@ -214,6 +264,9 @@ export const draftSchema = z.object({
   validation_issues: z.array(validationIssueSchema),
   created_at: z.string(),
   updated_at: z.string(),
+  needs_review: z.boolean().optional(),
+  review_reasons: z.array(z.string()).default([]),
+  attachment_id: z.string().nullable().optional(),
 })
 export type Draft = z.infer<typeof draftSchema>
 
@@ -242,12 +295,53 @@ export const pushResultSchema = z.object({
 })
 export type PushResult = z.infer<typeof pushResultSchema>
 
+export const ocrLineItemSchema = z.object({
+  description: z.string(),
+  hsn: z.string().nullable().optional(),
+  quantity: z.number().nullable().optional(),
+  rate: z.number().nullable().optional(),
+  amount: z.number().nullable().optional(),
+})
+
+export const ocrFieldsSchema = z.object({
+  supplier_name: z.string().nullable().optional(),
+  supplier_gstin: z.string().nullable().optional(),
+  invoice_number: z.string().nullable().optional(),
+  invoice_date: z.string().nullable().optional(),
+  due_date: z.string().nullable().optional(),
+  place_of_supply: z.string().nullable().optional(),
+  line_items: z.array(ocrLineItemSchema).default([]),
+  taxable_value: z.number().nullable().optional(),
+  cgst: z.number().nullable().optional(),
+  sgst: z.number().nullable().optional(),
+  igst: z.number().nullable().optional(),
+  tds: z.number().nullable().optional(),
+  other_charges: z.number().nullable().optional(),
+  grand_total: z.number().nullable().optional(),
+  narration: z.string().nullable().optional(),
+})
+
+export const ocrResultSchema = z.object({
+  fields: ocrFieldsSchema,
+  confidence: z.record(z.string(), z.number()),
+  raw_text: z.string().optional(),
+})
+export type OcrResult = z.infer<typeof ocrResultSchema>
+
+export const OCR_MIN_CONFIDENCE = 0.7
+
 export const attachmentSchema = z.object({
   id: z.string(),
   file_name: z.string(),
   content_type: z.string(),
   size_bytes: z.number(),
   uploaded_at: z.string(),
+  ocr_status: z.enum(['pending', 'running', 'done', 'failed', 'skipped']).default('pending'),
+  ocr_result: ocrResultSchema.nullable().optional(),
+  ocr_model: z.string().nullable().optional(),
+  ocr_duration_ms: z.number().nullable().optional(),
+  ocr_error: z.string().nullable().optional(),
+  // Legacy summary shape kept for the demo mock/pre-OCR fixtures.
   ocr: z
     .object({
       vendor_guess: z.string().nullable(),
@@ -259,6 +353,11 @@ export const attachmentSchema = z.object({
 })
 export type Attachment = z.infer<typeof attachmentSchema>
 
+export const attachmentsListSchema = z.object({
+  items: z.array(attachmentSchema),
+  total: z.number().optional(),
+})
+
 // --- DraftPurchaseBill request payload (mirrors §3.6 example) --------------
 
 export const draftPartySchema = z.object({
@@ -268,6 +367,9 @@ export const draftPartySchema = z.object({
   billing_address: z.string().optional(),
   source_of_supply: z.string(),
   destination_of_supply: z.string(),
+  create_if_missing: z.boolean().default(false),
+  gst_registration_type: z.enum(['regular', 'composition', 'unregistered']).optional(),
+  mailing_name: z.string().optional(),
 })
 
 export const draftItemSchema = z.object({

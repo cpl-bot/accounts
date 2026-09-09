@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { GrossProfitChart } from './gross-profit-chart'
 import { IncomeExpenseChart } from './income-expense-chart'
 import { CashFlowChart } from './cash-flow-chart'
+import { FormulaWidget, StockStatusLine } from './formula-widget'
 import { WidgetLabel, AsOnPill, VsPrevious, StatValue } from './primitives'
 import { formatLakh } from '@/lib/format'
 import { useDashboardOverview } from '@/lib/api/hooks'
@@ -66,16 +67,38 @@ export function OverviewTab({ from, to }: { from: string; to: string }) {
     )
   }
 
-  const { gross_profit, cash_bank, pnl, income_vs_expense, trends } = data
+  const { gross_profit, cash_bank, pnl, income_vs_expense, trends, formula, opening_stock, closing_stock, stock_adjustment_status } = data
+  const modeLabel = formula?.gross_profit_mode === 'trading' ? 'Trading' : 'Simple'
 
   return (
-    <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+    <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+    <div className="grid flex-1 grid-cols-1 gap-5 lg:grid-cols-3">
       {/* Gross Profit */}
       <Card>
         <CardContent className="flex flex-col gap-4 p-5">
-          <WidgetLabel>Gross Profit</WidgetLabel>
+          <div className="flex items-center justify-between">
+            <WidgetLabel>Gross Profit</WidgetLabel>
+            <Badge variant="outline">{modeLabel}</Badge>
+          </div>
           <StatValue>{formatLakh(gross_profit.value)}</StatValue>
           <VsPrevious pct={gross_profit.change_pct} />
+          {formula?.gross_profit_mode === 'trading' ? (
+            <div className="grid grid-cols-2 gap-3 rounded-lg border border-border p-3">
+              <div>
+                <p className="text-xs text-muted-foreground">Opening Stock</p>
+                <p className="text-sm font-semibold tabular-nums">
+                  {opening_stock != null ? formatLakh(opening_stock) : '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Closing Stock</p>
+                <p className="text-sm font-semibold tabular-nums">
+                  {closing_stock != null ? formatLakh(closing_stock) : '—'}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          <StockStatusLine status={stock_adjustment_status} />
           <GrossProfitChart data={trends.gross_profit} />
         </CardContent>
       </Card>
@@ -160,6 +183,11 @@ export function OverviewTab({ from, to }: { from: string; to: string }) {
           </div>
         </CardContent>
       </Card>
+    </div>
+
+      <div className="w-full xl:w-80 xl:shrink-0">
+        <FormulaWidget onSaved={refetch} stockAdjustmentStatus={stock_adjustment_status} />
+      </div>
     </div>
   )
 }

@@ -23,6 +23,15 @@ export function Modal({
   const dialogRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  // Callers routinely pass an inline `onClose` (a new function identity every
+  // render). Keeping it out of this effect's deps means typing in a field
+  // inside the modal doesn't re-run the focus-trap setup/teardown on every
+  // keystroke — which previously bounced focus away and back via the cleanup
+  // path (`previouslyFocused.current?.focus()`) each time, disrupting typing.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
@@ -36,7 +45,7 @@ export function Modal({
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.stopPropagation()
-        onClose()
+        onCloseRef.current()
         return
       }
       if (e.key !== 'Tab' || !node) return
@@ -60,7 +69,7 @@ export function Modal({
       document.removeEventListener('keydown', onKeyDown)
       previouslyFocused.current?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   if (!open) return null
 

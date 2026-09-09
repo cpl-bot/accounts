@@ -14,5 +14,6 @@ describe('UploadModal', () => {
     await user.upload(input, file)
 
     expect(await screen.findByText('invoice.pdf')).toBeInTheDocument()
+    expect(await screen.findByText(/ocr started/i)).toBeInTheDocument()
   })
 })

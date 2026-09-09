@@ -115,6 +115,8 @@ export function UploadModal({ open, onClose }: { open: boolean; onClose: () => v
               <span className="truncate">{u.name}</span>
               {u.status === 'error' ? (
                 <span className="ml-auto text-xs text-destructive">{u.error}</span>
+              ) : u.status === 'done' ? (
+                <span className="ml-auto text-xs text-muted-foreground">OCR started</span>
               ) : null}
             </li>
           ))}

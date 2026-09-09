@@ -19,9 +19,12 @@ import {
 import type {
   Attachment,
   BillsResponse,
+  DashboardFormula,
   DashboardOverview,
   DashboardPayables,
   Draft,
+  Ledger,
+  LedgerLookupResult,
   Settings,
   SyncRun,
   TallyStatus,
@@ -46,6 +49,17 @@ export function demoSettings(): Settings {
     tally_company_name: tallyConnection.company,
     sync_interval_minutes: 15,
     write_enabled: false,
+  }
+}
+
+export function demoDashboardFormula(): DashboardFormula {
+  return {
+    gross_profit_mode: 'simple',
+    stock_source: 'tally',
+    manual_opening_stock: null,
+    manual_closing_stock: null,
+    revenue_groups: ['Sales Accounts'],
+    cost_of_sales_groups: ['Purchase Accounts', 'Direct Expenses'],
   }
 }
 
@@ -76,6 +90,10 @@ export function demoDashboardOverview(): DashboardOverview {
       income_vs_expense: incomeVsExpenseTrend,
       cash_flow: cashFlowTrend,
     },
+    formula: demoDashboardFormula(),
+    opening_stock: 4_20_000,
+    closing_stock: 3_95_000,
+    stock_adjustment_status: 'applied',
   }
 }
 
@@ -145,10 +163,53 @@ export function demoDrafts(): { items: Draft[]; total: number } {
         severity: 'error',
       },
     ],
+    review_reasons: [],
     created_at: now,
     updated_at: now,
   }))
   return { items, total: items.length }
+}
+
+export function demoLedgers(): Ledger[] {
+  return [
+    { name: 'BioShield Medical', parent: 'Sundry Creditors', gstin: '27AAECB1234D1Z5', source: 'tally' },
+    { name: 'ZEN Manufacturing', parent: 'Sundry Creditors', gstin: '29AAECZ5678E1Z2', source: 'tally' },
+    { name: 'SwiftRoute Logistics', parent: 'Sundry Creditors', gstin: null, source: 'tally' },
+    { name: 'BlueMark Advisory', parent: 'Sundry Creditors', gstin: null, source: 'talai' },
+  ]
+}
+
+export function demoLedgerLookup(name: string): LedgerLookupResult {
+  const normalise = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/\b(pvt|ltd|private|limited)\b/g, '')
+      .replace(/[^a-z0-9]/g, '')
+      .trim()
+  const target = normalise(name)
+  const ledgers = demoLedgers()
+  const exact = ledgers.find((l) => normalise(l.name) === target)
+  if (exact) return { found: true, ledger: exact, suggestions: [], best_ratio: 1 }
+
+  const withRatio = ledgers
+    .map((l) => {
+      const a = normalise(l.name)
+      const b = target
+      const longer = a.length > b.length ? a : b
+      const shorter = a.length > b.length ? b : a
+      const ratio = longer.length === 0 ? 1 : shorter.length / longer.length
+      return { ...l, ratio: a.includes(b) || b.includes(a) ? Math.max(ratio, 0.85) : ratio }
+    })
+    .filter((l) => l.ratio >= 0.5)
+    .sort((a, b) => b.ratio - a.ratio)
+    .slice(0, 5)
+
+  return {
+    found: false,
+    ledger: null,
+    suggestions: withRatio,
+    best_ratio: withRatio[0]?.ratio ?? null,
+  }
 }
 
 export function demoAttachments(): Attachment[] {
@@ -159,6 +220,31 @@ export function demoAttachments(): Attachment[] {
     content_type: 'application/pdf',
     size_bytes: 120_000 + i * 1000,
     uploaded_at: new Date().toISOString(),
+    ocr_status: 'done',
+    ocr_model: 'gemma3:12b',
+    ocr_duration_ms: 4200,
+    ocr_error: null,
+    ocr_result: {
+      fields: {
+        supplier_name: b.vendor,
+        supplier_gstin: null,
+        invoice_number: b.fileName,
+        invoice_date: b.billingDate,
+        due_date: null,
+        place_of_supply: 'Maharashtra',
+        line_items: [],
+        taxable_value: b.totalAmount,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
+        tds: 0,
+        other_charges: 0,
+        grand_total: b.totalAmount,
+        narration: null,
+      },
+      confidence: { supplier_name: 0.92, total: 0.88, invoice_number: 0.6 },
+      raw_text: '',
+    },
     ocr: { vendor_guess: b.vendor, total_guess: b.totalAmount, confidence: 0.72 },
   }))
 }

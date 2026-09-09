@@ -269,3 +269,107 @@ already-testable, dependency-free unit in the codebase.
    `POST /sync/pull` (masters/vouchers/bills scopes), and should today's
    "push queued drafts" flow have simpler UI instead of a selector that
    doesn't currently do anything?
+
+## Phase 2 additions
+
+Implements engineering plan §3.8 (vendor ledger creation), §3.9 (configurable
+gross-profit formula), and §3.10 (OCR attachments) on the frontend, against
+the same-shaped contracts the middleware is implementing concurrently.
+
+**What was added**
+
+- `lib/api/schema.ts`: `LedgerLookupResult`, `VendorLedgerCreate`(+`Result`),
+  `ValidationIssue.details` (`can_create`, `suggestions`), `DraftPurchaseBill
+  .party.create_if_missing`/`gst_registration_type`/`mailing_name`,
+  `DashboardFormula`, `DashboardOverview.formula`/`opening_stock`/
+  `closing_stock`/`stock_adjustment_status`, `OcrResult`/`OcrFields` and
+  `Attachment.ocr_status`/`ocr_result`/`ocr_model`/`ocr_duration_ms`/
+  `ocr_error`, `Draft.needs_review`/`review_reasons`/`attachment_id`,
+  `Ledger.source`.
+- `lib/api/hooks.ts`: `useLedgerLookup` (400ms debounce), `useLedgers`,
+  `useDashboardFormula` (GET+PUT), `useAttachments` (5s poll while any
+  pending/running), `useAttachment`, `useDraft`,
+  `createDraftFromAttachment`, `rerunOcr`.
+- `lib/api/demo-fixtures.ts` + `tests/msw/handlers.ts` +
+  `app/api/talai/[...path]/route.ts`: fixtures/handlers for every endpoint
+  above (`/ledgers`, `/ledgers/lookup`, `/ledgers` POST, `/settings/
+  dashboard`, `/attachments` GET/:id/:id/ocr/:id/draft, `/drafts/:id` GET/PUT)
+  so demo mode and tests stay in lockstep with the contract.
+- `components/ap/create-bill-form.tsx`: vendor-name lookup with a green
+  "Matches Tally ledger" hint or a not-found panel (suggestion chips,
+  "create this vendor ledger" checkbox that reveals the required ledger
+  fields and sets `create_if_missing`); a needs-review banner and per-field
+  OCR confidence badges when the draft came from an attachment; loads and
+  prefills from `?draft=<id>` (`GET /drafts/:id`) and switches Save from
+  `POST /drafts` to `PUT /drafts/:id` in that case.
+- `app/(app)/vendors/page.tsx`: real ledger table (search, `source` badge)
+  + "New Vendor" modal (`POST /ledgers`) with a dry-run notice and
+  collapsible generated-XML `<pre>`.
+- `components/dashboard/formula-widget.tsx`: sidebar widget (collapsible on
+  small screens) for `gross_profit_mode`, stock source, manual stock inputs,
+  and revenue/cost-of-sales groups; wired into `overview-tab.tsx`, which now
+  also shows a Simple/Trading badge and opening/closing stock rows on the
+  Gross Profit card plus the `stock_adjustment_status` line.
+- `components/ap/attachments-list.tsx`: real "Bill Uploads" tab backed by
+  `GET /attachments` — OCR status pills (pending/running/done-with-confidence/
+  failed-with-retry/skipped-with-hint) and "Create bill from this file" →
+  `POST /attachments/:id/draft` → navigates to `/accounts-payable/create?
+  draft=<id>`. `upload-modal.tsx` now shows an "OCR started" notice per file.
+- Accounts Payable's "Needs Review" tab is now a dedicated table (reasons
+  column, sourced from `validation_issues` + `review_reasons`) instead of a
+  filtered `BillsTable`.
+- `components/ui/field.tsx`: `Field` now wires `htmlFor`/`id` between its
+  label and control automatically.
+
+**Bug fixed along the way**: `components/ui/modal.tsx`'s focus-trap effect
+depended on `[open, onClose]`. Every caller passes an inline `onClose`
+(`() => setOpen(false)`), so the effect re-ran on every keystroke inside the
+modal — its cleanup calls `previouslyFocused.current?.focus()`, which
+bounced focus away from the field being typed into. Typing a value containing
+a space into any modal input reliably lost keystrokes (and, combined with
+whatever previously had focus, could re-trigger clicks). Fixed by keeping
+`onClose` in a ref so the effect depends only on `open`. This affects every
+modal in the app (`UploadModal`, `SyncModal`, the new `NewVendorModal`), not
+just the new vendor form — worth a regression test on the older modals if
+the wider test suite doesn't already cover typing-with-spaces there.
+
+**Left undone / follow-ups**
+
+- Ledger creation panel's "State" field is a free-text input, not the
+  existing GST-registration state `<Select>` used elsewhere in the form —
+  kept consistent with the plan's "comma-separated text inputs are fine"
+  spirit for speed; worth swapping for the same state list once one exists
+  as a shared constant.
+- `ValidationIssue.details.suggestions` is modeled and rendered generically
+  (via the existing severity-based issue list) but the vendor-lookup panel's
+  own suggestion chips are driven by `useLedgerLookup`, not by
+  `LEDGER_POSSIBLE_DUPLICATE`'s `details.suggestions` — the two can disagree
+  if the middleware's duplicate check and the lookup endpoint ever compute
+  ratios differently. Once real duplicate-error payloads are available,
+  consider rendering `details.suggestions` directly in that issue's row.
+- No dedicated component test for `NewVendorModal` in isolation (only via
+  `VendorsPage`); acceptable given time, but worth splitting out if the
+  modal grows more validation.
+- `useAttachments`' 5s poll stops once nothing is pending/running but does
+  not resume automatically if a new attachment is uploaded elsewhere while
+  the tab is open — a manual refetch (switching tabs) picks it up.
+
+**UX questions for the product owner**
+
+1. When a suggested ledger has `ratio ≥ 0.95` (`LEDGER_POSSIBLE_DUPLICATE`),
+   should picking a suggestion chip also uncheck "create this vendor ledger"
+   automatically, or is it fine to leave the user to uncheck it themselves
+   before re-saving?
+2. For the Vendors page, should `source: 'talai'` ledgers show any additional
+   affordance (e.g. "confirm on next sync", or a manual re-check action), or
+   is the badge alone sufficient until the next pull confirms them?
+3. The Trading-mode opening/closing stock rows on the Gross Profit card show
+   an em dash when null — is that acceptable, or should Simple-mode users
+   never see stock rows at all (current behavior) versus Trading-mode users
+   with `stock_adjustment_status: 'unavailable'` seeing a stronger prompt to
+   enter manual values inline on the card itself, not just in the sidebar
+   widget?
+4. "Needs Review" today unions validation errors and `review_reasons`. Is a
+   draft with only a *warning*-severity issue (e.g. `LEDGER_WILL_BE_CREATED`)
+   ever supposed to land in Needs Review, or is that queue strictly for
+   errors and low-confidence OCR?

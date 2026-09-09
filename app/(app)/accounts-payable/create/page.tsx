@@ -1,5 +1,6 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { PageHeader } from '@/components/layout/page-header'
 import { CreateBillForm } from '@/components/ap/create-bill-form'
 import { buttonVariants } from '@/components/ui/button'
@@ -19,7 +20,15 @@ export default function CreateBillPage() {
         }
       />
       <main className="flex-1 overflow-y-auto p-6">
-        <CreateBillForm />
+        <Suspense
+          fallback={
+            <div className="flex items-center justify-center gap-2 p-16 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin" /> Loading…
+            </div>
+          }
+        >
+          <CreateBillForm />
+        </Suspense>
       </main>
     </>
   )
