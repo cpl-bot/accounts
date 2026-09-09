@@ -1788,6 +1788,10 @@
           },
           "direction": {
             "type": "string",
+            "enum": [
+              "payable",
+              "receivable"
+            ],
             "title": "Direction"
           }
         },
@@ -3117,6 +3121,10 @@
           },
           "source": {
             "type": "string",
+            "enum": [
+              "tally",
+              "talai"
+            ],
             "title": "Source",
             "default": "tally"
           }
@@ -3898,6 +3906,10 @@
           },
           "kind": {
             "type": "string",
+            "enum": [
+              "pull",
+              "push"
+            ],
             "title": "Kind"
           },
           "scope": {
@@ -3906,6 +3918,11 @@
           },
           "status": {
             "type": "string",
+            "enum": [
+              "running",
+              "success",
+              "failed"
+            ],
             "title": "Status"
           },
           "started_at": {

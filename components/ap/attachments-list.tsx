@@ -144,7 +144,7 @@ export function AttachmentsList() {
                 </span>
               </td>
               <td className="px-4 py-3 text-muted-foreground">
-                {new Date(a.uploaded_at).toLocaleString()}
+                {new Date(a.created_at).toLocaleString()}
               </td>
               <td className="px-4 py-3">
                 <OcrPill attachment={a} onRetry={retry} />

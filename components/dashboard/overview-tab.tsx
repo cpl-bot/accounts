@@ -1,14 +1,13 @@
 'use client'
 
-import { ChevronRight, Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { GrossProfitChart } from './gross-profit-chart'
 import { IncomeExpenseChart } from './income-expense-chart'
-import { CashFlowChart } from './cash-flow-chart'
 import { FormulaWidget, StockStatusLine } from './formula-widget'
-import { WidgetLabel, AsOnPill, VsPrevious, StatValue } from './primitives'
+import { WidgetLabel, StatValue } from './primitives'
 import { formatLakh } from '@/lib/format'
 import { useDashboardOverview } from '@/lib/api/hooks'
 
@@ -67,123 +66,104 @@ export function OverviewTab({ from, to }: { from: string; to: string }) {
     )
   }
 
-  const { gross_profit, cash_bank, pnl, income_vs_expense, trends, formula, opening_stock, closing_stock, stock_adjustment_status } = data
+  // This mirrors the middleware's flat `DashboardOverview` exactly (plan
+  // §3.6/§3.9) — there is no "vs previous period" figure and no
+  // day-by-day cash breakdown; the backend does not compute either yet.
+  const {
+    revenue,
+    cost_of_sales,
+    gross_profit,
+    gross_margin_pct,
+    indirect_income,
+    indirect_expense,
+    net_profit,
+    cash_and_bank,
+    trends,
+    formula,
+    opening_stock,
+    closing_stock,
+    stock_adjustment_status,
+  } = data
   const modeLabel = formula?.gross_profit_mode === 'trading' ? 'Trading' : 'Simple'
+  const gpTrend = trends.map((t) => ({ month: t.month, value: t.gross_profit }))
+  const revenueVsCost = trends.map((t) => ({
+    month: t.month,
+    income: t.revenue,
+    expense: t.cost_of_sales,
+  }))
 
   return (
     <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
-    <div className="grid flex-1 grid-cols-1 gap-5 lg:grid-cols-3">
-      {/* Gross Profit */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5">
-          <div className="flex items-center justify-between">
-            <WidgetLabel>Gross Profit</WidgetLabel>
-            <Badge variant="outline">{modeLabel}</Badge>
-          </div>
-          <StatValue>{formatLakh(gross_profit.value)}</StatValue>
-          <VsPrevious pct={gross_profit.change_pct} />
-          {formula?.gross_profit_mode === 'trading' ? (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-border p-3">
-              <div>
-                <p className="text-xs text-muted-foreground">Opening Stock</p>
-                <p className="text-sm font-semibold tabular-nums">
-                  {opening_stock != null ? formatLakh(opening_stock) : '—'}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Closing Stock</p>
-                <p className="text-sm font-semibold tabular-nums">
-                  {closing_stock != null ? formatLakh(closing_stock) : '—'}
-                </p>
-              </div>
+      <div className="grid flex-1 grid-cols-1 gap-5 lg:grid-cols-3">
+        {/* Gross Profit */}
+        <Card>
+          <CardContent className="flex flex-col gap-4 p-5">
+            <div className="flex items-center justify-between">
+              <WidgetLabel>Gross Profit</WidgetLabel>
+              <Badge variant="outline">{modeLabel}</Badge>
             </div>
-          ) : null}
-          <StockStatusLine status={stock_adjustment_status} />
-          <GrossProfitChart data={trends.gross_profit} />
-        </CardContent>
-      </Card>
+            <StatValue>{formatLakh(gross_profit)}</StatValue>
+            <p className="text-sm text-muted-foreground">{gross_margin_pct.toFixed(2)}% margin</p>
+            {formula?.gross_profit_mode === 'trading' ? (
+              <div className="grid grid-cols-2 gap-3 rounded-lg border border-border p-3">
+                <div>
+                  <p className="text-xs text-muted-foreground">Opening Stock</p>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {opening_stock != null ? formatLakh(opening_stock) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Closing Stock</p>
+                  <p className="text-sm font-semibold tabular-nums">
+                    {closing_stock != null ? formatLakh(closing_stock) : '—'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+            <StockStatusLine status={stock_adjustment_status} />
+            <GrossProfitChart data={gpTrend} />
+          </CardContent>
+        </Card>
 
-      {/* Cash & Bank Balance */}
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-5">
-          <div className="flex items-start justify-between">
+        {/* Cash & Bank Balance */}
+        <Card>
+          <CardContent className="flex flex-col gap-4 p-5">
             <WidgetLabel>Cash &amp; Bank Balance</WidgetLabel>
-            <AsOnPill date={cash_bank.as_on} />
-          </div>
-          <StatValue>{formatLakh(cash_bank.value)}</StatValue>
-          <VsPrevious pct={cash_bank.change_pct} />
-          <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border">
-            <div className="border-r border-border p-3">
-              <p className="text-xs text-muted-foreground">Today</p>
-              <p className="mt-1 text-sm font-semibold tabular-nums">{formatLakh(cash_bank.today)}</p>
-            </div>
-            <div className="border-r border-border p-3">
-              <p className="text-xs text-muted-foreground">Yesterday</p>
-              <p className="mt-1 text-sm font-semibold tabular-nums">
-                {formatLakh(cash_bank.yesterday)}
-              </p>
-            </div>
-            <div className="flex items-center justify-center bg-muted/50 p-3">
-              <span className="text-sm font-semibold text-primary tabular-nums">₹0 K</span>
-            </div>
-          </div>
-          <div className="flex items-center justify-between pt-1">
-            <span className="text-sm font-semibold">Account Breakdown</span>
-            <button className="flex items-center gap-0.5 text-sm text-muted-foreground hover:text-foreground">
-              View More <ChevronRight className="size-4" />
-            </button>
-          </div>
-          <div className="flex flex-col divide-y divide-border">
-            {cash_bank.accounts.map((a) => (
-              <div key={a.name} className="flex items-center justify-between py-2.5">
-                <span className="text-sm text-muted-foreground">{a.name}</span>
-                <span className="text-sm font-semibold tabular-nums">{formatLakh(a.value)}</span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+            <StatValue>{formatLakh(cash_and_bank)}</StatValue>
+            <p className="text-xs text-muted-foreground">
+              Cash-in-hand and bank account closing balances as on {to}.
+            </p>
+          </CardContent>
+        </Card>
 
-      {/* P&L Summary */}
-      <Card>
-        <CardContent className="flex flex-col p-5">
-          <WidgetLabel>P&amp;L Summary</WidgetLabel>
-          <div className="mt-3 flex flex-col divide-y divide-border">
-            <PnlRow label="Revenue" value={formatLakh(pnl.revenue)} />
-            <PnlRow label="Cost of Sales" value={formatLakh(pnl.cost_of_sales)} />
-            <PnlRow
-              label="Gross Profit"
-              value={formatLakh(pnl.gross_profit)}
-              bold
-              badge={`${pnl.gross_margin}% Margin`}
-            />
-            <PnlRow label="Indirect Income" value={formatLakh(pnl.indirect_income)} />
-            <PnlRow label="Indirect Expense" value={formatLakh(pnl.indirect_expense)} />
-            <PnlRow label="Net Profit" value={formatLakh(pnl.net_profit)} bold />
-          </div>
-        </CardContent>
-      </Card>
+        {/* P&L Summary */}
+        <Card>
+          <CardContent className="flex flex-col p-5">
+            <WidgetLabel>P&amp;L Summary</WidgetLabel>
+            <div className="mt-3 flex flex-col divide-y divide-border">
+              <PnlRow label="Revenue" value={formatLakh(revenue)} />
+              <PnlRow label="Cost of Sales" value={formatLakh(cost_of_sales)} />
+              <PnlRow
+                label="Gross Profit"
+                value={formatLakh(gross_profit)}
+                bold
+                badge={`${gross_margin_pct.toFixed(2)}% Margin`}
+              />
+              <PnlRow label="Indirect Income" value={formatLakh(indirect_income)} />
+              <PnlRow label="Indirect Expense" value={formatLakh(indirect_expense)} />
+              <PnlRow label="Net Profit" value={formatLakh(net_profit)} bold />
+            </div>
+          </CardContent>
+        </Card>
 
-      {/* Income vs Expense */}
-      <Card className="lg:col-span-2">
-        <CardContent className="flex flex-col gap-4 p-5">
-          <WidgetLabel>Income vs Expense</WidgetLabel>
-          <StatValue>{formatLakh(income_vs_expense.value)}</StatValue>
-          <VsPrevious pct={income_vs_expense.change_pct} />
-          <IncomeExpenseChart data={trends.income_vs_expense} />
-        </CardContent>
-      </Card>
-
-      {/* Cash Inflow vs Outflow */}
-      <Card>
-        <CardContent className="flex h-full flex-col gap-4 p-5">
-          <WidgetLabel>Cash Inflow vs Outflow</WidgetLabel>
-          <div className="mt-auto">
-            <CashFlowChart data={trends.cash_flow} />
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        {/* Revenue vs Cost of Sales */}
+        <Card className="lg:col-span-3">
+          <CardContent className="flex flex-col gap-4 p-5">
+            <WidgetLabel>Revenue vs Cost of Sales</WidgetLabel>
+            <IncomeExpenseChart data={revenueVsCost} />
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="w-full xl:w-80 xl:shrink-0">
         <FormulaWidget onSaved={refetch} stockAdjustmentStatus={stock_adjustment_status} />

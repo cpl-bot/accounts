@@ -1,53 +1,48 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { WidgetLabel, AsOnPill, VsPrevious, StatValue } from './primitives'
+import { WidgetLabel, AsOnPill, StatValue } from './primitives'
 import { AgingBar } from './aging-bar'
 import { AgingPanel } from './aging-panel'
 import { formatLakh } from '@/lib/format'
-import { useDashboardPayables } from '@/lib/api/hooks'
-import type { AgingBucket } from '@/lib/api/schema'
+import { useDashboardPayables, useBills } from '@/lib/api/hooks'
+import type { AgingBucket as ApiAgingBucket } from '@/lib/api/schema'
 
-function OutstandingCard({
-  label,
-  value,
-  onAccount,
-  changePct,
-}: {
-  label: string
-  value: number
-  onAccount: number
-  changePct: number
-}) {
+// AgingBar/AgingPanel render a local view-model shape (bucket label, bill
+// count, amount, and a display percentage) that predates the API — this
+// maps the middleware's real `{label, amount, count}` buckets into it,
+// computing the percentage client-side since the backend doesn't send one.
+function toDisplayBuckets(buckets: ApiAgingBucket[], total: number) {
+  return buckets.map((b) => ({
+    bucket: b.label,
+    bills: b.count,
+    amount: b.amount,
+    pct: total > 0 ? Math.round((b.amount / total) * 100) : 0,
+  }))
+}
+
+function OutstandingCard({ label, value }: { label: string; value: number }) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 p-5">
         <WidgetLabel>{label}</WidgetLabel>
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <StatValue className={value < 0 ? 'text-destructive' : undefined}>
-            {formatLakh(value)}
-          </StatValue>
-          <span className="flex items-center gap-1.5 text-sm text-primary">
-            <span className="size-1.5 rounded-full bg-primary" /> Inc. {formatLakh(onAccount)} On
-            Account
-          </span>
-        </div>
-        <VsPrevious pct={changePct} />
+        <StatValue className={value < 0 ? 'text-destructive' : undefined}>
+          {formatLakh(value)}
+        </StatValue>
       </CardContent>
     </Card>
   )
 }
 
-function DaysCard({ label, days, changePct }: { label: string; days: number; changePct: number }) {
+function DaysCard({ label, days }: { label: string; days: number }) {
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 p-5">
         <WidgetLabel>{label}</WidgetLabel>
-        <StatValue>{days} days</StatValue>
-        <VsPrevious pct={changePct} />
+        <StatValue>{days.toFixed(1)} days</StatValue>
       </CardContent>
     </Card>
   )
@@ -61,7 +56,7 @@ function AgingCard({
 }: {
   label: string
   total: number
-  buckets: AgingBucket[]
+  buckets: ReturnType<typeof toDisplayBuckets>
   onOpen: () => void
 }) {
   return (
@@ -86,6 +81,39 @@ function AgingCard({
 export function PayablesTab({ range }: { range: string }) {
   const [panel, setPanel] = useState<null | 'ap' | 'ar'>(null)
   const { data, loading, error, refetch } = useDashboardPayables()
+  // Open-bill detail for the drill-down panels: `/dashboard/payables` only
+  // carries totals and aging buckets, not per-bill rows.
+  const payableBills = useBills('payable')
+  const receivableBills = useBills('receivable')
+
+  const payableDisplayBuckets = useMemo(
+    () => (data ? toDisplayBuckets(data.payable_buckets, data.total_payable) : []),
+    [data],
+  )
+  const receivableDisplayBuckets = useMemo(
+    () => (data ? toDisplayBuckets(data.receivable_buckets, data.total_receivable) : []),
+    [data],
+  )
+  const payableOpenBills = useMemo(
+    () =>
+      (payableBills.data?.items ?? []).map((b) => ({
+        vendor: b.party_ledger,
+        billNo: b.bill_name,
+        amount: b.pending_amount,
+        due: b.due_date ?? '—',
+      })),
+    [payableBills.data],
+  )
+  const receivableOpenBills = useMemo(
+    () =>
+      (receivableBills.data?.items ?? []).map((b) => ({
+        vendor: b.party_ledger,
+        billNo: b.bill_name,
+        amount: b.pending_amount,
+        due: b.due_date ?? '—',
+      })),
+    [receivableBills.data],
+  )
 
   if (loading && !data) {
     return (
@@ -109,8 +137,6 @@ export function PayablesTab({ range }: { range: string }) {
     )
   }
 
-  const { payables, receivables } = data
-
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
@@ -119,21 +145,12 @@ export function PayablesTab({ range }: { range: string }) {
           <AsOnPill date={data.as_on} />
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <OutstandingCard
-            label="AP Outstanding"
-            value={payables.outstanding}
-            onAccount={payables.on_account}
-            changePct={payables.change_pct}
-          />
-          <DaysCard
-            label="Days Payable Outstanding"
-            days={payables.days_payable_outstanding}
-            changePct={0}
-          />
+          <OutstandingCard label="AP Outstanding" value={data.total_payable} />
+          <DaysCard label="Days Payable Outstanding" days={data.dpo_days} />
           <AgingCard
             label="AP Aging"
-            total={payables.total_amount}
-            buckets={payables.buckets}
+            total={data.total_payable}
+            buckets={payableDisplayBuckets}
             onOpen={() => setPanel('ap')}
           />
         </div>
@@ -145,21 +162,12 @@ export function PayablesTab({ range }: { range: string }) {
           <AsOnPill date={data.as_on} />
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-          <OutstandingCard
-            label="AR Outstanding"
-            value={receivables.outstanding}
-            onAccount={receivables.on_account}
-            changePct={receivables.change_pct}
-          />
-          <DaysCard
-            label="Days Sales Outstanding"
-            days={receivables.days_sales_outstanding}
-            changePct={0}
-          />
+          <OutstandingCard label="AR Outstanding" value={data.total_receivable} />
+          <DaysCard label="Days Sales Outstanding" days={data.dso_days} />
           <AgingCard
             label="AR Aging"
-            total={receivables.total_amount}
-            buckets={receivables.buckets}
+            total={data.total_receivable}
+            buckets={receivableDisplayBuckets}
             onOpen={() => setPanel('ar')}
           />
         </div>
@@ -171,14 +179,9 @@ export function PayablesTab({ range }: { range: string }) {
         title="AP Aging"
         range={range}
         data={{
-          buckets: payables.buckets,
-          totalAmount: payables.total_amount,
-          openBills: payables.open_bills.map((b) => ({
-            vendor: b.vendor,
-            billNo: b.bill_no,
-            amount: b.amount,
-            due: b.due,
-          })),
+          buckets: payableDisplayBuckets,
+          totalAmount: data.total_payable,
+          openBills: payableOpenBills,
         }}
       />
       <AgingPanel
@@ -187,14 +190,9 @@ export function PayablesTab({ range }: { range: string }) {
         title="AR Aging"
         range={range}
         data={{
-          buckets: receivables.buckets,
-          totalAmount: receivables.total_amount,
-          openBills: receivables.open_bills.map((b) => ({
-            vendor: b.vendor,
-            billNo: b.bill_no,
-            amount: b.amount,
-            due: b.due,
-          })),
+          buckets: receivableDisplayBuckets,
+          totalAmount: data.total_receivable,
+          openBills: receivableOpenBills,
         }}
       />
     </div>

@@ -75,6 +75,6 @@ describe('talai proxy route', () => {
     expect(fetchMock).not.toHaveBeenCalled()
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(typeof body.connected).toBe('boolean')
+    expect(typeof body.reachable).toBe('boolean')
   })
 })

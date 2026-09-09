@@ -58,6 +58,7 @@ export function FormulaWidget({
   const [costGroups, setCostGroups] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [saveWarnings, setSaveWarnings] = useState<string[]>([])
 
   useEffect(() => {
     if (!data) return
@@ -68,6 +69,7 @@ export function FormulaWidget({
     setClosingStock(data.manual_closing_stock ?? '')
     setRevenueGroups(data.revenue_groups.join(', '))
     setCostGroups(data.cost_of_sales_groups.join(', '))
+    setSaveWarnings([])
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data])
 
@@ -75,7 +77,9 @@ export function FormulaWidget({
     setSaving(true)
     setSaveError(null)
     try {
-      await save({
+      // `warnings` is server-reported (advisory complaints about the stored
+      // formula) and must not be echoed back in the PUT body.
+      const result = await save({
         gross_profit_mode: mode,
         stock_source: stockSource,
         manual_opening_stock: stockSource === 'manual' ? openingStock || null : null,
@@ -89,6 +93,7 @@ export function FormulaWidget({
           .map((g) => g.trim())
           .filter(Boolean),
       })
+      setSaveWarnings(result.warnings ?? [])
       onSaved?.()
     } catch {
       setSaveError('Could not save the formula.')
@@ -96,6 +101,8 @@ export function FormulaWidget({
       setSaving(false)
     }
   }
+
+  const warnings = saveWarnings.length > 0 ? saveWarnings : data?.warnings ?? []
 
   return (
     <Card>
@@ -171,6 +178,16 @@ export function FormulaWidget({
               <Field label="Cost of Sales Groups (comma-separated)">
                 <Input value={costGroups} onChange={(e) => setCostGroups(e.target.value)} />
               </Field>
+
+              {warnings.length > 0 ? (
+                <div className="flex flex-col gap-1 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                  {warnings.map((w) => (
+                    <p key={w} className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="mt-0.5 size-3.5 shrink-0" /> {w}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
 
               <StockStatusLine status={stockAdjustmentStatus} />
 

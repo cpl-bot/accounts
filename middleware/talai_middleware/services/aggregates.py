@@ -203,22 +203,29 @@ def stock_figures(
         return ZERO, ZERO, "applied"
 
     from_tally = formula.stock_source == "tally"
-    opening = _valuation(session, date_from - timedelta(days=1)) if from_tally else None
-    closing = _valuation(session, date_to) if from_tally else None
-    if opening is not None and closing is not None:
-        return opening, closing, "applied"
+    tally_opening = _valuation(session, date_from - timedelta(days=1)) if from_tally else None
+    tally_closing = _valuation(session, date_to) if from_tally else None
+    if tally_opening is not None and tally_closing is not None:
+        return tally_opening, tally_closing, "applied"
 
-    manual_opening = formula.manual_opening_stock
-    manual_closing = formula.manual_closing_stock
-    opening = opening if opening is not None else manual_opening
-    closing = closing if closing is not None else manual_closing
-    if opening is None and closing is None:
+    opening = tally_opening if tally_opening is not None else formula.manual_opening_stock
+    closing = tally_closing if tally_closing is not None else formula.manual_closing_stock
+    if opening is None or closing is None:
+        # A boundary with neither a valuation nor a manual override cannot be
+        # substituted with zero: that would overstate cost of sales by the
+        # whole of the other boundary. Degrade to ``simple`` instead (§3.9).
+        missing = [
+            name
+            for name, value in (("opening", opening), ("closing", closing))
+            if value is None
+        ]
         logger.warning(
-            "trading gross profit requested for %s..%s but no stock value is available",
-            date_from, date_to,
+            "trading gross profit requested for %s..%s but the %s stock value is "
+            "unavailable; no stock adjustment applied",
+            date_from, date_to, " and ".join(missing),
         )
         return ZERO, ZERO, "unavailable"
-    return _money(opening or ZERO), _money(closing or ZERO), "manual"
+    return _money(opening), _money(closing), "manual"
 
 
 def _months(date_from: date, date_to: date) -> list[tuple[date, date]]:

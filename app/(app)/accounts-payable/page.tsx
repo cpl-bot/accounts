@@ -19,8 +19,19 @@ import { UploadModal } from '@/components/ap/upload-modal'
 import { SyncModal } from '@/components/ap/sync-modal'
 import { AttachmentsList } from '@/components/ap/attachments-list'
 import { useBills, useDrafts } from '@/lib/api/hooks'
+import type { DraftStatus } from '@/lib/api/schema'
 import type { Bill } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
+
+// Collapses the backend's `DraftStatus` onto the three states this table can
+// render. `committed` is the only synced state (there is no `synced` on the
+// wire); `failed` and anything carrying a blocking validation error goes to
+// Needs Review; the rest is still on its way to Tally.
+function draftRowStatus(status: DraftStatus, needsReview: boolean): Bill['status'] {
+  if (status === 'committed') return 'synced'
+  if (status === 'failed' || needsReview) return 'needs_review'
+  return 'uploaded'
+}
 
 const TABS = [
   { key: 'all', label: 'All Bills' },
@@ -51,19 +62,27 @@ export default function AccountsPayablePage() {
         id: i + 1,
         voucherNo: i + 1,
         fileName: null,
-        vendor: b.party,
-        billingDate: b.bill_date,
-        voucherDate: b.due_date ?? b.bill_date,
-        totalAmount: b.amount,
+        vendor: b.party_ledger,
+        billingDate: b.bill_date ?? '',
+        voucherDate: b.due_date ?? b.bill_date ?? '',
+        totalAmount: b.opening_amount,
         status: 'synced' as const,
         synced: true,
       })) ?? []
 
     const fromDrafts: Bill[] =
       draftsQuery.data?.items.map((d, i) => {
-        const payload = d.payload as { party?: { ledger_name?: string }; totals?: { grand_total?: number } }
-        const hasErrors = d.validation_issues.some((issue) => issue.severity === 'error')
-        const needsReview = d.needs_review || hasErrors
+        // The middleware echoes payload.totals.grand_total back as a
+        // Decimal-serialized string (e.g. "25875.00"); Number(...) below
+        // coerces it.
+        // `DraftOut.payload` is nullable (a draft can exist before its
+        // payload does, e.g. straight off an attachment).
+        const payload = (d.payload ?? {}) as {
+          party?: { ledger_name?: string }
+          totals?: { grand_total?: number | string }
+        }
+        const hasErrors = d.errors.some((issue) => issue.severity === 'error')
+        const needsReview = d.status === 'failed' || d.needs_review || hasErrors
         return {
           id: fromBills.length + i + 1,
           voucherNo: fromBills.length + i + 1,
@@ -71,9 +90,14 @@ export default function AccountsPayablePage() {
           vendor: payload.party?.ledger_name ?? 'Unknown vendor',
           billingDate: d.created_at.slice(0, 10),
           voucherDate: d.updated_at.slice(0, 10),
-          totalAmount: payload.totals?.grand_total ?? 0,
-          status: needsReview ? ('needs_review' as const) : ('uploaded' as const),
-          synced: false,
+          totalAmount: Number(payload.totals?.grand_total ?? 0),
+          // The backend's DraftStatus has more states than this table's
+          // three-way status: `committed` is a bill that reached Tally,
+          // `failed` (or any blocking error) needs a human, and everything
+          // still in flight — draft/validated/queued/committing/cancelled —
+          // shows as an unsynced upload.
+          status: draftRowStatus(d.status, needsReview),
+          synced: d.status === 'committed',
         }
       }) ?? []
 
@@ -88,8 +112,9 @@ export default function AccountsPayablePage() {
     const offset = billsQuery.data?.items.length ?? 0
     draftsQuery.data?.items.forEach((d, i) => {
       const reasons = [
-        ...d.validation_issues.filter((issue) => issue.severity === 'error').map((issue) => issue.message),
+        ...d.errors.filter((issue) => issue.severity === 'error').map((issue) => issue.message),
         ...(d.review_reasons ?? []),
+        ...(d.status === 'failed' && d.errors.length === 0 ? ['The last push to Tally failed.'] : []),
       ]
       if (reasons.length > 0) map.set(offset + i + 1, reasons)
     })

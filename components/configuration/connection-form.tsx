@@ -43,8 +43,8 @@ export function ConnectionForm() {
         body: JSON.stringify({ host, port }),
       })
       setTest({ kind: 'done', result })
-      if (result.company) setCompany(result.company)
-      if (result.connected) {
+      if (result.active_company) setCompany(result.active_company)
+      if (result.reachable) {
         try {
           const { companies: found } = await apiFetch('tally/companies', tallyCompaniesSchema)
           setCompanies(found.map((c) => c.name))
@@ -141,16 +141,21 @@ export function ConnectionForm() {
           <span
             className={
               'inline-flex items-center gap-1.5 text-sm ' +
-              (test.result.connected ? 'text-success' : 'text-destructive')
+              (test.result.reachable ? 'text-success' : 'text-destructive')
             }
           >
-            {test.result.connected ? (
+            {test.result.reachable ? (
               <CheckCircle2 className="size-4" />
             ) : (
               <XCircle className="size-4" />
             )}
-            {test.result.connected
-              ? `Reachable${test.result.latency_ms != null ? ` (${test.result.latency_ms} ms)` : ''}`
+            {test.result.reachable
+              ? `Reachable${test.result.latency_ms != null ? ` (${test.result.latency_ms} ms)` : ''}` +
+                (test.result.company_match
+                  ? test.result.active_company
+                    ? ` — ${test.result.active_company}`
+                    : ''
+                  : ` — wrong company open${test.result.expected_company ? ` (expected ${test.result.expected_company})` : ''}`)
               : (test.result.error ?? 'Not reachable')}
           </span>
         ) : null}
@@ -198,7 +203,7 @@ export function ConnectionForm() {
 
       <Field label="Write to Tally">
         <div className="flex h-10 items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 text-sm text-muted-foreground">
-          {settings?.write_enabled ? 'Enabled' : 'Disabled'}
+          {settings?.tally_write_enabled ? 'Enabled' : 'Disabled'}
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground text-pretty">
           Controlled by <code className="rounded bg-muted px-1 py-0.5">TALLY_WRITE_ENABLED</code>{' '}
