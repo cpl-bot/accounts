@@ -1,0 +1,21 @@
+[Unit]
+Description=Talai web (Next.js)
+After=network-online.target talai-middleware.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=talai
+Group=talai
+WorkingDirectory=/opt/talai
+EnvironmentFile=/opt/talai/.env
+Environment=NODE_ENV=production
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=3000
+ExecStart=/usr/bin/pnpm start
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

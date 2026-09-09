@@ -10,13 +10,14 @@ import {
   Tooltip,
   Legend,
 } from 'recharts'
-import { incomeVsExpenseTrend } from '@/lib/mock-data'
 import { formatAxisLakh, formatLakh } from '@/lib/format'
 
-export function IncomeExpenseChart() {
+export type IncomeExpensePoint = { month: string; income: number; expense: number }
+
+export function IncomeExpenseChart({ data }: { data: IncomeExpensePoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={260}>
-      <ComposedChart data={incomeVsExpenseTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <ComposedChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <XAxis
           dataKey="month"
           tickLine={false}
@@ -33,7 +34,7 @@ export function IncomeExpenseChart() {
         />
         <Tooltip
           cursor={{ fill: 'var(--muted)' }}
-          formatter={(v: number, name) => [formatLakh(v), name]}
+          formatter={(v, name) => [formatLakh(Number(v)), name]}
           contentStyle={{ borderRadius: 12, border: '1px solid var(--border)', fontSize: 12 }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />

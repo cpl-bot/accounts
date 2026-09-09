@@ -1,3 +1,5 @@
+import * as React from 'react'
+import { useId } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -64,10 +66,22 @@ export function Field({
   children: React.ReactNode
   className?: string
 }) {
+  const id = useId()
+  // Associates the label with the field's control via `htmlFor`/`id` so
+  // `getByLabelText` and assistive tech both resolve it, without every call
+  // site wiring an id by hand. Only applies when the immediate child is a
+  // single element (the common case here); a Field wrapping a more complex
+  // tree just renders the label above it, unassociated.
+  const control = React.isValidElement(children)
+    ? React.cloneElement(children as React.ReactElement<{ id?: string }>, {
+        id: (children.props as { id?: string }).id ?? id,
+      })
+    : children
+
   return (
     <div className={className}>
-      <Label>{label}</Label>
-      {children}
+      <Label htmlFor={id}>{label}</Label>
+      {control}
     </div>
   )
 }

@@ -2,9 +2,13 @@
 
 import { X, ChevronRight } from 'lucide-react'
 import { formatINR, formatLakh } from '@/lib/format'
-import type { apAging } from '@/lib/mock-data'
+import type { AgingBucket } from '@/lib/mock-data'
 
-type AgingData = typeof apAging
+type AgingData = {
+  buckets: AgingBucket[]
+  totalAmount: number
+  openBills: { vendor: string; billNo: string; amount: number; due: string }[]
+}
 
 export function AgingPanel({
   open,

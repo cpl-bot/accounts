@@ -1,5 +1,15 @@
-import { ComingSoon } from '@/components/layout/coming-soon'
+import { PageHeader } from '@/components/layout/page-header'
+import { ConnectionForm } from '@/components/configuration/connection-form'
 
-export default function Page() {
-  return <ComingSoon title="Configuration" />
+export default function ConfigurationPage() {
+  return (
+    <>
+      <PageHeader title="Configuration" />
+      <main className="flex-1 overflow-y-auto p-6">
+        <div className="mx-auto max-w-2xl">
+          <ConnectionForm />
+        </div>
+      </main>
+    </>
+  )
 }

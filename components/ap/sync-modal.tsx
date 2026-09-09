@@ -11,11 +11,14 @@ import {
   RefreshCw,
   Loader2,
   Check,
+  AlertTriangle,
 } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
 import { syncItems } from '@/lib/mock-data'
 import { cn } from '@/lib/utils'
+import { apiFetch, ApiError } from '@/lib/api/client'
+import { pushResultSchema, type PushResult } from '@/lib/api/schema'
 
 const ICONS: Record<string, typeof ArrowLeftRight> = {
   transactions: ArrowLeftRight,
@@ -26,9 +29,20 @@ const ICONS: Record<string, typeof ArrowLeftRight> = {
   journal_vouchers: FileText,
 }
 
-export function SyncModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SyncModal({
+  open,
+  onClose,
+  draftIds,
+}: {
+  open: boolean
+  onClose: () => void
+  /** Specific drafts to push (e.g. from a selection); omit to push all queued drafts. */
+  draftIds?: string[]
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set(['bills']))
-  const [state, setState] = useState<'idle' | 'syncing' | 'done'>('idle')
+  const [state, setState] = useState<'idle' | 'syncing' | 'done' | 'error'>('idle')
+  const [result, setResult] = useState<PushResult | null>(null)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
   const total = syncItems
     .filter((i) => selected.has(i.key))
@@ -41,10 +55,69 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
       return next
     })
 
-  const runSync = () => {
+  const runSync = async () => {
     setState('syncing')
-    // Middleware validates + commits to Tally in batches; simulated here.
-    setTimeout(() => setState('done'), 1600)
+    setErrorMessage(null)
+    try {
+      const res = await apiFetch('sync/push', pushResultSchema, {
+        method: 'POST',
+        body: JSON.stringify(draftIds ? { draft_ids: draftIds } : {}),
+      })
+      setResult(res)
+      setState('done')
+    } catch (err) {
+      setErrorMessage(err instanceof ApiError ? err.message : 'Sync failed unexpectedly.')
+      setState('error')
+    }
+  }
+
+  const reset = () => {
+    setState('idle')
+    setResult(null)
+    setErrorMessage(null)
+    onClose()
+  }
+
+  if (state === 'done' && result) {
+    const committed = result.results.filter((r) => r.status === 'committed')
+    const failed = result.results.filter((r) => r.status === 'failed')
+    return (
+      <Modal open={open} onClose={reset} title="Sync Results">
+        {result.run.dry_run ? (
+          <p className="mb-4 flex items-center gap-2 rounded-lg bg-accent/40 px-3 py-2 text-sm text-foreground">
+            <AlertTriangle className="size-4 shrink-0" /> Dry run — nothing was written to Tally.
+          </p>
+        ) : null}
+        <div className="flex flex-col gap-2">
+          {result.results.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No queued records were found to sync.</p>
+          ) : (
+            result.results.map((r) => (
+              <div
+                key={r.draft_id}
+                className={cn(
+                  'flex items-center justify-between rounded-lg border px-3 py-2 text-sm',
+                  r.status === 'committed' ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5',
+                )}
+              >
+                <span className="font-medium">{r.draft_id}</span>
+                {r.status === 'committed' ? (
+                  <span className="text-success">Committed{r.voucher_number ? ` — ${r.voucher_number}` : ''}</span>
+                ) : (
+                  <span className="text-destructive">{r.errors?.join('; ') ?? 'Failed'}</span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          {committed.length} committed, {failed.length} failed.
+        </p>
+        <Button className="mt-5 h-11 w-full" onClick={reset}>
+          Done
+        </Button>
+      </Modal>
+    )
   }
 
   return (
@@ -92,6 +165,12 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
         overwhelming the upstream service.
       </p>
 
+      {state === 'error' ? (
+        <p className="mt-3 flex items-center gap-2 text-sm text-destructive">
+          <AlertTriangle className="size-4 shrink-0" /> {errorMessage}
+        </p>
+      ) : null}
+
       <Button
         onClick={runSync}
         disabled={total === 0 || state !== 'idle'}
@@ -101,10 +180,6 @@ export function SyncModal({ open, onClose }: { open: boolean; onClose: () => voi
         {state === 'syncing' ? (
           <>
             <Loader2 className="size-4 animate-spin" /> Syncing…
-          </>
-        ) : state === 'done' ? (
-          <>
-            <Check className="size-4" /> Synced {total} records
           </>
         ) : (
           <>

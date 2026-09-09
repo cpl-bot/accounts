@@ -75,7 +75,9 @@ export function Sidebar() {
             />
           </svg>
         </div>
-        <span className="text-lg font-semibold tracking-tight">AI Accountant</span>
+        <span className="text-lg font-semibold tracking-tight">
+          {process.env.NEXT_PUBLIC_APP_NAME || 'Talai'}
+        </span>
       </div>
 
       <div className="px-3">
