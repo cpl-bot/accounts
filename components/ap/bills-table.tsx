@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { Cloud, ArrowUpDown, MoreHorizontal, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import type { Bill } from '@/lib/mock-data'
@@ -23,6 +24,17 @@ export function BillsTable({
   onToggle: (id: number) => void
   onToggleAll: (checked: boolean) => void
 }) {
+  const [pageSize, setPageSize] = useState(10)
+  const [requestedPage, setPage] = useState(1)
+
+  const pageCount = Math.max(1, Math.ceil(bills.length / pageSize))
+  // Derived, not stored: keeps the page in range when the underlying data
+  // set or page size changes (e.g. switching tabs, or a search narrowing the
+  // results) without a render-triggering effect.
+  const page = Math.min(requestedPage, pageCount)
+
+  const startIndex = (page - 1) * pageSize
+  const pageItems = bills.slice(startIndex, startIndex + pageSize)
   const allSelected = bills.length > 0 && bills.every((b) => selected.has(b.id))
 
   return (
@@ -67,7 +79,7 @@ export function BillsTable({
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {bills.map((bill) => (
+            {pageItems.map((bill) => (
               <tr
                 key={bill.id}
                 className={cn('hover:bg-muted/30', selected.has(bill.id) && 'bg-accent/40')}
@@ -115,20 +127,37 @@ export function BillsTable({
           <span>Rows per page:</span>
           <select
             className="rounded-md border border-border bg-background px-2 py-1 text-sm"
-            defaultValue="10"
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value))
+              setPage(1)
+            }}
           >
-            <option>10</option>
-            <option>25</option>
-            <option>50</option>
+            <option value={10}>10</option>
+            <option value={25}>25</option>
+            <option value={50}>50</option>
           </select>
         </div>
         <div className="flex items-center gap-4">
-          <span>1 - {bills.length} of 40</span>
+          <span>
+            {bills.length === 0 ? 0 : startIndex + 1} -{' '}
+            {Math.min(startIndex + pageSize, bills.length)} of {bills.length}
+          </span>
           <div className="flex items-center gap-1">
-            <button className="rounded-md p-1 hover:bg-muted" aria-label="Previous page">
+            <button
+              className="rounded-md p-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+              aria-label="Previous page"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
               <ChevronLeft className="size-4" />
             </button>
-            <button className="rounded-md p-1 hover:bg-muted" aria-label="Next page">
+            <button
+              className="rounded-md p-1 hover:bg-muted disabled:pointer-events-none disabled:opacity-40"
+              aria-label="Next page"
+              disabled={page >= pageCount}
+              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+            >
               <ChevronRight className="size-4" />
             </button>
           </div>

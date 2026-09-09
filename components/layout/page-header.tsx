@@ -1,4 +1,5 @@
 import { PanelLeft } from 'lucide-react'
+import { TallyStatusPill } from '@/components/layout/tally-status-pill'
 
 export function PageHeader({
   title,
@@ -13,7 +14,10 @@ export function PageHeader({
         <PanelLeft className="size-5 text-muted-foreground" aria-hidden="true" />
         <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      <div className="flex items-center gap-3">
+        <TallyStatusPill />
+        {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      </div>
     </header>
   )
 }

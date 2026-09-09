@@ -1,9 +1,16 @@
-// Mock data standing in for the Tally -> Supabase sync layer.
-// In production these values come from the FastAPI middleware reading Tally.
+// Test / demo fixture data for Talai.
+//
+// This file is NOT live application data. It backs:
+//   - unit/component tests (imported directly),
+//   - the MSW handlers in tests/msw/handlers.ts, and
+//   - NEXT_PUBLIC_DEMO_MODE=true, where the API proxy route serves these
+//     fixtures instead of forwarding to the middleware.
+// In production, all of this comes from the FastAPI middleware reading Tally
+// via lib/api/client.ts and lib/api/hooks.ts.
 
 export const company = {
   name: 'Nivana Healthcare Pvt. Ltd.',
-  user: { name: 'Priya', email: 'priya.ca@aiaccountant.io' },
+  user: { name: 'Priya', email: 'priya.ca@talai.local' },
 }
 
 export const dashboardOverview = {

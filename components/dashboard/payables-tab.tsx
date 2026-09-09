@@ -1,12 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { AlertTriangle, Loader2 } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { WidgetLabel, AsOnPill, VsPrevious, StatValue } from './primitives'
 import { AgingBar } from './aging-bar'
 import { AgingPanel } from './aging-panel'
-import { apAging, arAging } from '@/lib/mock-data'
 import { formatLakh } from '@/lib/format'
+import { useDashboardPayables } from '@/lib/api/hooks'
+import type { AgingBucket } from '@/lib/api/schema'
 
 function OutstandingCard({
   label,
@@ -58,7 +61,7 @@ function AgingCard({
 }: {
   label: string
   total: number
-  buckets: typeof apAging.buckets
+  buckets: AgingBucket[]
   onOpen: () => void
 }) {
   return (
@@ -82,30 +85,55 @@ function AgingCard({
 
 export function PayablesTab({ range }: { range: string }) {
   const [panel, setPanel] = useState<null | 'ap' | 'ar'>(null)
+  const { data, loading, error, refetch } = useDashboardPayables()
+
+  if (loading && !data) {
+    return (
+      <div className="flex items-center justify-center gap-2 rounded-xl border border-border p-16 text-sm text-muted-foreground">
+        <Loader2 className="size-4 animate-spin" /> Loading payables &amp; receivables…
+      </div>
+    )
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-border p-16 text-center">
+        <AlertTriangle className="size-6 text-destructive" />
+        <p className="text-sm text-muted-foreground">
+          Could not load payables &amp; receivables{error ? `: ${error.message}` : '.'}
+        </p>
+        <Button variant="outline" size="sm" onClick={refetch}>
+          Retry
+        </Button>
+      </div>
+    )
+  }
+
+  const { payables, receivables } = data
 
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-muted-foreground">Payables</h2>
-          <AsOnPill date="May 12, 2026" />
+          <AsOnPill date={data.as_on} />
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <OutstandingCard
             label="AP Outstanding"
-            value={apAging.outstanding}
-            onAccount={apAging.onAccount}
-            changePct={apAging.changePct}
+            value={payables.outstanding}
+            onAccount={payables.on_account}
+            changePct={payables.change_pct}
           />
           <DaysCard
             label="Days Payable Outstanding"
-            days={apAging.daysPayableOutstanding}
+            days={payables.days_payable_outstanding}
             changePct={0}
           />
           <AgingCard
             label="AP Aging"
-            total={apAging.totalAmount}
-            buckets={apAging.buckets}
+            total={payables.total_amount}
+            buckets={payables.buckets}
             onOpen={() => setPanel('ap')}
           />
         </div>
@@ -114,20 +142,24 @@ export function PayablesTab({ range }: { range: string }) {
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-muted-foreground">Receivables</h2>
-          <AsOnPill date="May 12, 2026" />
+          <AsOnPill date={data.as_on} />
         </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
           <OutstandingCard
             label="AR Outstanding"
-            value={arAging.outstanding}
-            onAccount={arAging.onAccount}
-            changePct={arAging.changePct}
+            value={receivables.outstanding}
+            onAccount={receivables.on_account}
+            changePct={receivables.change_pct}
           />
-          <DaysCard label="Days Sales Outstanding" days={arAging.daysSalesOutstanding} changePct={0} />
+          <DaysCard
+            label="Days Sales Outstanding"
+            days={receivables.days_sales_outstanding}
+            changePct={0}
+          />
           <AgingCard
             label="AR Aging"
-            total={arAging.totalAmount}
-            buckets={arAging.buckets}
+            total={receivables.total_amount}
+            buckets={receivables.buckets}
             onOpen={() => setPanel('ar')}
           />
         </div>
@@ -138,14 +170,32 @@ export function PayablesTab({ range }: { range: string }) {
         onClose={() => setPanel(null)}
         title="AP Aging"
         range={range}
-        data={apAging}
+        data={{
+          buckets: payables.buckets,
+          totalAmount: payables.total_amount,
+          openBills: payables.open_bills.map((b) => ({
+            vendor: b.vendor,
+            billNo: b.bill_no,
+            amount: b.amount,
+            due: b.due,
+          })),
+        }}
       />
       <AgingPanel
         open={panel === 'ar'}
         onClose={() => setPanel(null)}
         title="AR Aging"
         range={range}
-        data={arAging}
+        data={{
+          buckets: receivables.buckets,
+          totalAmount: receivables.total_amount,
+          openBills: receivables.open_bills.map((b) => ({
+            vendor: b.vendor,
+            billNo: b.bill_no,
+            amount: b.amount,
+            due: b.due,
+          })),
+        }}
       />
     </div>
   )

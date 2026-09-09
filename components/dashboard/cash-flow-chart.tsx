@@ -1,13 +1,14 @@
 'use client'
 
 import { Area, AreaChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
-import { cashFlowTrend } from '@/lib/mock-data'
 import { formatAxisLakh, formatLakh } from '@/lib/format'
 
-export function CashFlowChart() {
+export type CashFlowPoint = { month: string; inflow: number; outflow: number }
+
+export function CashFlowChart({ data }: { data: CashFlowPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height={280}>
-      <AreaChart data={cashFlowTrend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="inflowFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--chart-3)" stopOpacity={0.3} />
@@ -34,7 +35,7 @@ export function CashFlowChart() {
         />
         <Tooltip
           cursor={{ stroke: 'var(--border)' }}
-          formatter={(v: number, name) => [formatLakh(v), name]}
+          formatter={(v, name) => [formatLakh(Number(v)), name]}
           contentStyle={{ borderRadius: 12, border: '1px solid var(--border)', fontSize: 12 }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />

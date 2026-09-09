@@ -1,21 +1,63 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import { FilePlus2, CheckCircle2 } from 'lucide-react'
+import { FilePlus2, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react'
 import { Modal } from '@/components/ui/modal'
+import { apiFetch, ApiError } from '@/lib/api/client'
+import { attachmentSchema, type Attachment } from '@/lib/api/schema'
+
+type UploadState = {
+  name: string
+  status: 'pending' | 'uploading' | 'done' | 'error'
+  attachment?: Attachment
+  error?: string
+}
 
 export function UploadModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const [files, setFiles] = useState<string[]>([])
+  const [uploads, setUploads] = useState<UploadState[]>([])
   const [dragging, setDragging] = useState(false)
 
-  const addFiles = (list: FileList | null) => {
-    if (!list) return
-    setFiles((prev) => [...prev, ...Array.from(list).map((f) => f.name)])
+  // The middleware processes one bill at a time via OCR (PRD MVP), so files
+  // are uploaded sequentially even when several are dropped at once.
+  const addFiles = async (list: FileList | null) => {
+    if (!list || list.length === 0) return
+    const files = Array.from(list)
+    setUploads((prev) => [...prev, ...files.map((f) => ({ name: f.name, status: 'pending' as const }))])
+
+    for (const file of files) {
+      setUploads((prev) =>
+        prev.map((u) => (u.name === file.name && u.status === 'pending' ? { ...u, status: 'uploading' } : u)),
+      )
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const attachment = await apiFetch('attachments', attachmentSchema, {
+          method: 'POST',
+          body: formData,
+        })
+        setUploads((prev) =>
+          prev.map((u) => (u.name === file.name ? { ...u, status: 'done', attachment } : u)),
+        )
+      } catch (err) {
+        setUploads((prev) =>
+          prev.map((u) =>
+            u.name === file.name
+              ? { ...u, status: 'error', error: err instanceof ApiError ? err.message : 'Upload failed.' }
+              : u,
+          ),
+        )
+      }
+    }
+  }
+
+  const close = () => {
+    setUploads([])
+    onClose()
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Bulk Upload Bills">
+    <Modal open={open} onClose={close} title="Bulk Upload Bills">
       <div
         onDragOver={(e) => {
           e.preventDefault()
@@ -44,7 +86,7 @@ export function UploadModal({ open, onClose }: { open: boolean; onClose: () => v
               browse
             </button>
           </p>
-          <p className="mt-1 text-sm text-muted-foreground">Upload up to 500 MB</p>
+          <p className="mt-1 text-sm text-muted-foreground">Upload up to 20 MB per file</p>
           <p className="text-sm text-muted-foreground">Supported formats: PDF/PNG/JPG/JPEG</p>
         </div>
         <input
@@ -57,14 +99,29 @@ export function UploadModal({ open, onClose }: { open: boolean; onClose: () => v
         />
       </div>
 
-      {files.length > 0 ? (
-        <div className="mt-4 flex items-center gap-2 text-sm text-success">
-          <CheckCircle2 className="size-4" />
-          All {files.length} file{files.length > 1 ? 's' : ''} uploaded successfully
-        </div>
+      {uploads.length > 0 ? (
+        <ul className="mt-4 flex flex-col gap-2">
+          {uploads.map((u) => (
+            <li key={u.name} className="flex items-center gap-2 text-sm">
+              {u.status === 'uploading' ? (
+                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+              ) : u.status === 'done' ? (
+                <CheckCircle2 className="size-4 shrink-0 text-success" />
+              ) : u.status === 'error' ? (
+                <AlertTriangle className="size-4 shrink-0 text-destructive" />
+              ) : (
+                <span className="size-4 shrink-0" />
+              )}
+              <span className="truncate">{u.name}</span>
+              {u.status === 'error' ? (
+                <span className="ml-auto text-xs text-destructive">{u.error}</span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="mt-4 text-sm text-muted-foreground">
-          The MVP processes one bill at a time via OCR; bulk upload queues each file for extraction.
+          Files are uploaded and queued for OCR extraction one at a time.
         </p>
       )}
     </Modal>

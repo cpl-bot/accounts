@@ -1,12 +1,14 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { Plus, Trash2, Sparkles } from 'lucide-react'
+import { Plus, Trash2, Sparkles, AlertTriangle, Loader2, CheckCircle2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Field, Input, Select, Textarea, Label } from '@/components/ui/field'
 import { formatINR } from '@/lib/format'
+import { apiFetch, ApiError } from '@/lib/api/client'
+import { draftPurchaseBillSchema, draftSchema, type Draft, type DraftPurchaseBill } from '@/lib/api/schema'
 
 type LineItem = {
   id: number
@@ -15,6 +17,7 @@ type LineItem = {
   godown: string
   quantity: number
   rate: number
+  hsn: string
 }
 
 type LedgerLine = {
@@ -55,8 +58,38 @@ function Section({
 let nextId = 100
 
 export function CreateBillForm() {
+  const [voucherDate, setVoucherDate] = useState('2026-06-10')
+  const [billDate, setBillDate] = useState('2026-05-10')
+  const [dueDate, setDueDate] = useState('2026-06-09')
+  const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('INV/BSM/4471')
+  const [gstRegistration, setGstRegistration] = useState('27AABCN1234C1ZP')
+  const [voucherType, setVoucherType] = useState('Purchase')
+  const [costCentre, setCostCentre] = useState('Procurement')
+  const [purchaseLedger, setPurchaseLedger] = useState('Purchase')
+  const [reverseCharge, setReverseCharge] = useState(false)
+  const [narration, setNarration] = useState('')
+
+  const [vendorName, setVendorName] = useState('BioShield Medical')
+  const [gstTreatment, setGstTreatment] = useState<'regular' | 'composition' | 'unregistered'>(
+    'regular',
+  )
+  const [billingAddress, setBillingAddress] = useState(
+    '14 Industrial Estate, Andheri East, Mumbai 400093',
+  )
+  const [gstin, setGstin] = useState('27AAECB1234D1Z5')
+  const [sourceOfSupply, setSourceOfSupply] = useState('Maharashtra')
+  const [destinationOfSupply, setDestinationOfSupply] = useState('Maharashtra')
+
   const [items, setItems] = useState<LineItem[]>([
-    { id: 1, description: 'Surgical gloves (box)', item: 'Nitrile Gloves', godown: 'Main Store', quantity: 50, rate: 450 },
+    {
+      id: 1,
+      description: 'Surgical gloves (box)',
+      item: 'Nitrile Gloves',
+      godown: 'Main Store',
+      quantity: 50,
+      rate: 450,
+      hsn: '4015',
+    },
   ])
   const [ledgers, setLedgers] = useState<LedgerLine[]>([
     { id: 1, description: 'Discount @ 3%', ledger: 'DISCOUNT', costCenter: 'Procurement', amount: -675 },
@@ -64,6 +97,11 @@ export function CreateBillForm() {
   const [taxLines, setTaxLines] = useState<LedgerLine[]>([
     { id: 1, description: 'IGST', ledger: 'IGST @ 18%', costCenter: 'Procurement', amount: 4050 },
   ])
+
+  const [draft, setDraft] = useState<Draft | null>(null)
+  const [saving, setSaving] = useState<'idle' | 'saving' | 'error'>('idle')
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [queueState, setQueueState] = useState<'idle' | 'queuing' | 'queued' | 'error'>('idle')
 
   const taxableValue = useMemo(
     () => items.reduce((s, i) => s + i.quantity * i.rate, 0),
@@ -77,7 +115,7 @@ export function CreateBillForm() {
   const addItem = () =>
     setItems((p) => [
       ...p,
-      { id: ++nextId, description: '', item: '', godown: '', quantity: 1, rate: 0 },
+      { id: ++nextId, description: '', item: '', godown: '', quantity: 1, rate: 0, hsn: '' },
     ])
   const addLedger = () =>
     setLedgers((p) => [
@@ -89,6 +127,97 @@ export function CreateBillForm() {
       ...p,
       { id: ++nextId, description: '', ledger: '', costCenter: '', amount: 0 },
     ])
+
+  function buildPayload(): DraftPurchaseBill {
+    return {
+      gst_registration: gstRegistration,
+      voucher_type: voucherType,
+      voucher_date: voucherDate,
+      bill_date: billDate,
+      due_date: dueDate,
+      supplier_invoice_no: supplierInvoiceNo,
+      cost_centre: costCentre,
+      party: {
+        ledger_name: vendorName,
+        gstin,
+        gst_treatment: gstTreatment,
+        billing_address: billingAddress,
+        source_of_supply: sourceOfSupply,
+        destination_of_supply: destinationOfSupply,
+      },
+      purchase_ledger: purchaseLedger,
+      items: items.map((i) => ({
+        description: i.description,
+        stock_item: i.item || undefined,
+        godown: i.godown || undefined,
+        quantity: i.quantity,
+        rate: i.rate,
+        hsn: i.hsn || undefined,
+      })),
+      ledger_lines: ledgers.map((l) => ({
+        ledger_name: l.ledger,
+        cost_centre: l.costCenter || undefined,
+        amount: l.amount,
+        description: l.description || undefined,
+      })),
+      tax_lines: taxLines.map((t) => ({
+        ledger_name: t.ledger,
+        cost_centre: t.costCenter || undefined,
+        amount: t.amount,
+        description: t.description || undefined,
+      })),
+      reverse_charge: reverseCharge,
+      narration: narration || undefined,
+      totals: {
+        taxable_value: taxableValue,
+        sub_total: subTotal,
+        gst: taxTotal,
+        tds: 0,
+        other_taxes: 0,
+        grand_total: grandTotal,
+      },
+    }
+  }
+
+  async function saveDraft() {
+    setSaving('saving')
+    setSaveError(null)
+    setQueueState('idle')
+    const payload = buildPayload()
+    const parsed = draftPurchaseBillSchema.safeParse(payload)
+    if (!parsed.success) {
+      setSaveError(parsed.error.issues[0]?.message ?? 'This bill has invalid fields.')
+      setSaving('error')
+      return
+    }
+    try {
+      const created = await apiFetch('drafts', draftSchema, {
+        method: 'POST',
+        body: JSON.stringify(parsed.data),
+      })
+      setDraft(created)
+      setSaving('idle')
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : 'Could not save the draft.')
+      setSaving('error')
+    }
+  }
+
+  async function queueForSync() {
+    if (!draft) return
+    setQueueState('queuing')
+    try {
+      const queued = await apiFetch(`drafts/${draft.id}/queue`, draftSchema, { method: 'POST' })
+      setDraft(queued)
+      setQueueState('queued')
+    } catch {
+      setQueueState('error')
+    }
+  }
+
+  const blockingIssues = draft?.validation_issues.filter((i) => i.severity === 'error') ?? []
+  const warnings = draft?.validation_issues.filter((i) => i.severity === 'warning') ?? []
+  const canQueue = draft != null && blockingIssues.length === 0 && draft.status !== 'queued'
 
   return (
     <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
@@ -104,36 +233,36 @@ export function CreateBillForm() {
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="GST Registration (my branch)">
-              <Select defaultValue="mh">
-                <option value="mh">Maharashtra — 27AABCN1234C1ZP</option>
-                <option value="ka">Karnataka — 29AABCN1234C1ZK</option>
+              <Select value={gstRegistration} onChange={(e) => setGstRegistration(e.target.value)}>
+                <option value="27AABCN1234C1ZP">Maharashtra — 27AABCN1234C1ZP</option>
+                <option value="29AABCN1234C1ZK">Karnataka — 29AABCN1234C1ZK</option>
               </Select>
             </Field>
             <Field label="Voucher Type">
-              <Select defaultValue="purchase">
-                <option value="purchase">Purchase</option>
-                <option value="debit-note">Debit Note</option>
+              <Select value={voucherType} onChange={(e) => setVoucherType(e.target.value)}>
+                <option value="Purchase">Purchase</option>
+                <option value="Debit Note">Debit Note</option>
               </Select>
             </Field>
             <Field label="Voucher No (auto)">
-              <Input defaultValue="PB-2026-0041" disabled />
+              <Input defaultValue="Assigned by Tally on sync" disabled />
             </Field>
             <Field label="Voucher Date">
-              <Input type="date" defaultValue="2026-06-10" />
+              <Input type="date" value={voucherDate} onChange={(e) => setVoucherDate(e.target.value)} />
             </Field>
             <Field label="Bill Date">
-              <Input type="date" defaultValue="2026-05-10" />
+              <Input type="date" value={billDate} onChange={(e) => setBillDate(e.target.value)} />
             </Field>
             <Field label="Due Date">
-              <Input type="date" defaultValue="2026-06-09" />
+              <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </Field>
             <Field label="Supplier Invoice No">
-              <Input defaultValue="INV/BSM/4471" />
+              <Input value={supplierInvoiceNo} onChange={(e) => setSupplierInvoiceNo(e.target.value)} />
             </Field>
             <Field label="Cost Centre">
-              <Select defaultValue="proc">
-                <option value="proc">Procurement</option>
-                <option value="admin">Administration</option>
+              <Select value={costCentre} onChange={(e) => setCostCentre(e.target.value)}>
+                <option value="Procurement">Procurement</option>
+                <option value="Administration">Administration</option>
               </Select>
             </Field>
           </div>
@@ -143,32 +272,38 @@ export function CreateBillForm() {
         <Section title="Vendor Details">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Name">
-              <Input defaultValue="BioShield Medical" />
+              <Input value={vendorName} onChange={(e) => setVendorName(e.target.value)} />
             </Field>
             <Field label="GST Treatment">
-              <Select defaultValue="regular">
+              <Select
+                value={gstTreatment}
+                onChange={(e) => setGstTreatment(e.target.value as typeof gstTreatment)}
+              >
                 <option value="regular">Registered — Regular</option>
                 <option value="composition">Registered — Composition</option>
                 <option value="unregistered">Unregistered</option>
               </Select>
             </Field>
             <Field label="Billing Address" className="sm:col-span-2">
-              <Textarea rows={2} defaultValue="14 Industrial Estate, Andheri East, Mumbai 400093" />
+              <Textarea rows={2} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
             </Field>
             <Field label="GSTIN">
-              <Input defaultValue="27AAECB1234D1Z5" />
+              <Input value={gstin} onChange={(e) => setGstin(e.target.value)} />
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Source of Supply">
-                <Select defaultValue="mh">
-                  <option value="mh">Maharashtra</option>
-                  <option value="ka">Karnataka</option>
+                <Select value={sourceOfSupply} onChange={(e) => setSourceOfSupply(e.target.value)}>
+                  <option value="Maharashtra">Maharashtra</option>
+                  <option value="Karnataka">Karnataka</option>
                 </Select>
               </Field>
               <Field label="Destination of Supply">
-                <Select defaultValue="mh">
-                  <option value="mh">Maharashtra</option>
-                  <option value="ka">Karnataka</option>
+                <Select
+                  value={destinationOfSupply}
+                  onChange={(e) => setDestinationOfSupply(e.target.value)}
+                >
+                  <option value="Maharashtra">Maharashtra</option>
+                  <option value="Karnataka">Karnataka</option>
                 </Select>
               </Field>
             </div>
@@ -181,9 +316,9 @@ export function CreateBillForm() {
           action={
             <div className="w-56">
               <Label>Purchase Ledger</Label>
-              <Select defaultValue="purchase">
-                <option value="purchase">Purchase</option>
-                <option value="purchase-import">Purchase — Import</option>
+              <Select value={purchaseLedger} onChange={(e) => setPurchaseLedger(e.target.value)}>
+                <option value="Purchase">Purchase</option>
+                <option value="Purchase — Import">Purchase — Import</option>
               </Select>
             </div>
           }
@@ -219,7 +354,15 @@ export function CreateBillForm() {
                         value={it.item}
                         onChange={(e) =>
                           setItems((p) =>
-                            p.map((x) => (x.id === it.id ? { ...x, item: e.target.value } : x)),
+                            p.map((x) =>
+                              x.id === it.id
+                                ? {
+                                    ...x,
+                                    item: e.target.value,
+                                    hsn: e.target.value === 'Nitrile Gloves' ? '4015' : '9018',
+                                  }
+                                : x,
+                            ),
                           )
                         }
                       >
@@ -314,7 +457,10 @@ export function CreateBillForm() {
         <Section title="Taxes">
           <div className="mb-4 w-64">
             <Label>Reverse Charges</Label>
-            <Select defaultValue="no">
+            <Select
+              value={reverseCharge ? 'yes' : 'no'}
+              onChange={(e) => setReverseCharge(e.target.value === 'yes')}
+            >
               <option value="no">Not Applicable</option>
               <option value="yes">Applicable</option>
             </Select>
@@ -331,8 +477,35 @@ export function CreateBillForm() {
 
         {/* Narration */}
         <Section title="Narration (optional)">
-          <Textarea rows={3} placeholder="Add a note for this voucher..." />
+          <Textarea
+            rows={3}
+            placeholder="Add a note for this voucher..."
+            value={narration}
+            onChange={(e) => setNarration(e.target.value)}
+          />
         </Section>
+
+        {draft && draft.validation_issues.length > 0 ? (
+          <Section title="Validation Issues">
+            <div className="flex flex-col gap-2">
+              {draft.validation_issues.map((issue, i) => (
+                <div
+                  key={i}
+                  className={cnIssue(issue.severity)}
+                >
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                  <div>
+                    <p className="font-medium">{issue.code}</p>
+                    <p className="text-muted-foreground">
+                      {issue.field ? `${issue.field}: ` : ''}
+                      {issue.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Section>
+        ) : null}
       </div>
 
       {/* Calculation Summary */}
@@ -349,17 +522,49 @@ export function CreateBillForm() {
               <span className="text-lg font-bold tabular-nums">{formatINR(grandTotal)}</span>
             </div>
           </div>
+
+          {saveError ? (
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-destructive">
+              <AlertTriangle className="size-4 shrink-0" /> {saveError}
+            </p>
+          ) : null}
+
+          {draft && blockingIssues.length === 0 && warnings.length === 0 ? (
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-success">
+              <CheckCircle2 className="size-4 shrink-0" /> Draft validated with no issues.
+            </p>
+          ) : null}
+
           <div className="mt-4 flex flex-col gap-2">
-            <Button className="w-full" size="lg">
-              Save &amp; Approve
+            <Button className="w-full" size="lg" onClick={saveDraft} disabled={saving === 'saving'}>
+              {saving === 'saving' ? <Loader2 className="size-4 animate-spin" /> : null}
+              {draft ? 'Re-validate' : 'Save as Draft'}
             </Button>
-            <Button variant="outline" className="w-full" size="lg">
-              Save as Draft
+            <Button
+              variant="outline"
+              className="w-full"
+              size="lg"
+              onClick={queueForSync}
+              disabled={!canQueue || queueState === 'queuing'}
+            >
+              {queueState === 'queuing' ? <Loader2 className="size-4 animate-spin" /> : null}
+              {queueState === 'queued' || draft?.status === 'queued'
+                ? 'Queued for sync'
+                : 'Queue for sync'}
             </Button>
           </div>
         </Card>
       </div>
     </div>
+  )
+}
+
+function cnIssue(severity: 'error' | 'warning') {
+  return (
+    'flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ' +
+    (severity === 'error'
+      ? 'border-destructive/30 bg-destructive/5 text-destructive'
+      : 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400')
   )
 }
 
