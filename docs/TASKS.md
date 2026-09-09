@@ -40,6 +40,8 @@ Status: ✅ done on this branch · 🔶 partially done · ⬜ not started
 | T‑F04 | Configuration page (host/port, test connection, company select, save) + header status pill | RTL tests: success and failure paths | 1.0 | 2 | ✅ |
 | T‑F05 | Dashboard wired to API with period → from/to, loading/error states | Page smoke test with MSW; period change refetches | 1.0 | 2 | ✅ |
 | T‑F06 | Accounts Payable list from API (vouchers + drafts), real pagination, tabs | Table renders from props; tab filters tested | 1.0 | 2 | ✅ |
+| T‑B29 | Configurable gross‑profit formula: `stock_valuations` table, Stock Summary pull at period boundaries, `GET/PUT /settings/dashboard`, trading‑mode aggregates with manual fallback (plan §3.9) | Simple vs trading GP on seeded data; fallback status when a boundary is missing | 1.5 | 3 | ✅ |
+| T‑F15 | Dashboard formula sidebar widget; mode shown beside gross profit | RTL: switch mode → PUT → overview refetched | 1.0 | 2 | ✅ |
 | T‑L01 | LAN validation: `scripts/check_tally_connection.py` against office Tally | Script exits 0, lists the company | 0.25 | — | ⬜ (needs LAN) |
 | T‑L02 | LAN validation: `scripts/validate_db_sync.py` full pull, reconcile ledger counts and bill totals with Tally reports | Script exits 0; dashboard numbers match Tally P&L for one month | 1.0 | — | ⬜ (needs LAN) |
 
@@ -54,8 +56,12 @@ Status: ✅ done on this branch · 🔶 partially done · ⬜ not started
 | T‑B17 | Attachments upload endpoint + `OcrProvider` interface with mock | Rejects wrong mime/size; stores file; mock OCR returns fixture | 0.5 | 1 | ✅ |
 | T‑F07 | Create Bill form → `DraftPurchaseBill`, inline validation issues, queue button | Form test builds exact payload; issues rendered by field | 1.5 | 3 | ✅ |
 | T‑F08 | Sync modal → `/sync/push`, per‑record results, dry‑run banner | RTL test for committed/failed/dry‑run renders | 0.5 | 1 | ✅ |
-| T‑F09 | Upload modal → `/attachments` (single file), opens Create Bill prefilled from OCR JSON | Upload test; prefill test | 0.5 | 1 | 🔶 (upload done, prefill pending OCR decision) |
+| T‑F09 | Upload modal → `/attachments` (single file), opens Create Bill prefilled from OCR JSON | Upload test; prefill test | 0.5 | 1 | ✅ |
 | T‑F10 | Accessible Modal (focus trap, Escape, aria) | Keyboard tests | 0.25 | 0.5 | ✅ |
+| T‑B23 | Vendor ledger creation: lookup with near‑match suggestions, `create_if_missing`, Import Ledger envelope, ledger‑then‑voucher push, `POST /ledgers` (plan §3.8) | Missing party → suggestions; near‑duplicate blocked; fake Tally shows ledger created before voucher; dry run stores both XMLs | 1.5 | 3 | ✅ |
+| T‑F14 | Missing‑vendor prompt in Create Bill (suggestions, "create ledger" toggle) and Vendors page listing Sundry Creditors with a create form | RTL: pick suggestion vs create; payload carries flag | 1.0 | 2 | ✅ |
+| T‑B19 | OCR via local LLM: `ocr/` package, Ollama provider with structured outputs, PDF rasterising, post‑processing, background task, attachment endpoints, draft from OCR (plan §3.10) | respx‑mocked Ollama; arithmetic/GSTIN post‑checks; low confidence → needs_review | 2.0 | 4 | ✅ |
+| T‑F13 | Bill Uploads tab from `GET /attachments` with OCR status; "Create bill from this file" prefills the form; Needs Review shows confidence badges | RTL with MSW | 1.0 | 2 | ✅ |
 | T‑L03 | LAN dry run: 10 real bills entered, XML reviewed by the accountant | Sign‑off recorded in `docs/LAN_DEPLOYMENT.md` checklist | 1.0 | — | ⬜ |
 
 ## Phase 3 — Write path (live, test company)
@@ -71,7 +77,8 @@ Status: ✅ done on this branch · 🔶 partially done · ⬜ not started
 
 | ID | Task | Acceptance test | Days | Agent‑h | Status |
 |---|---|---|---|---|---|
-| T‑L06 | Run as services (systemd / NSSM on Windows / Docker Compose) with auto‑restart | Reboot test | 0.5 | 1 | 🔶 (compose + docs provided) |
+| T‑L06 | Run as services on the Ubuntu server (`deploy/systemd/*.service`, `deploy/install-ubuntu.sh`) with auto‑restart; Ollama as a service | Reboot test | 0.5 | 1 | 🔶 (units + script provided; reboot test on site) |
+| T‑L09 | Install Ollama + pull `gemma3:12b` (or `4b`) on the Ubuntu server; run `scripts/check_ocr.py` on 5 real bills; record accuracy | ≥ 4/5 bills need no field correction | 0.5 | — | ⬜ |
 | T‑L07 | Backup of `talai.db` + uploads (daily copy) | Restore test | 0.25 | 0.5 | ⬜ |
 | T‑B22 | Basic observability: structured logs, `/sync/runs` page in UI | UI lists last 20 runs with status | 0.5 | 1 | ⬜ |
 | T‑F11 | Sync history page + failed‑draft retry UX | RTL tests | 0.5 | 1 | ⬜ |
@@ -82,8 +89,7 @@ Status: ✅ done on this branch · 🔶 partially done · ⬜ not started
 | ID | Task | Days |
 |---|---|---|
 | T‑B18 / T‑F12 | Users, roles, approver flow, per‑user audit | 3 |
-| T‑B19 / T‑F13 | OCR provider integration (per DECISIONS A10) and confidence‑based "Needs Review" | 3 |
-| T‑B23 | Vendor ledger creation from Talai (DECISIONS A4) | 1.5 |
+| T‑B30 | Alternative OCR models (Qwen2.5‑VL) and two‑stage Tesseract + LLM provider, accuracy benchmark harness | 2 |
 | T‑B24 | Supabase/Postgres deployment, DSN switch, RLS | 2 |
 | T‑B25 | Sales invoices, receipts, payments, journal vouchers | 5 |
 | T‑B26 | GSTR‑2B import and reconciliation | 4 |
@@ -95,11 +101,11 @@ Status: ✅ done on this branch · 🔶 partially done · ⬜ not started
 | Phase | Engineer‑days | Agent‑hours |
 |---|---|---|
 | 0 | 3.25 | 6.5 |
-| 1 | 17.25 | 34.5 |
-| 2 | 10.25 | 20.5 |
+| 1 | 19.75 | 39.5 |
+| 2 | 15.75 | 31.5 |
 | 3 | 2.5 | 2 |
 | 4 | 1.75 | 3.5 |
-| **v1 total** | **~35 days** | **~67 agent‑hours** plus LAN validation time |
+| **v1 total** | **~43 days** | **~83 agent‑hours** plus LAN validation time |
 
 Parallelisation: backend and frontend tracks are independent once the API
 contract (plan §3.6) is fixed; the LAN tasks (T‑L*) require a person at the

@@ -1,7 +1,7 @@
 # Talai — LAN Deployment and v1 Validation Checklist
 
-Target: one always‑on machine on the office LAN (the "Talai host") runs the
-middleware and the Next.js app. Two accountants use TallyPrime Gold on the LAN
+Target: the office **Ubuntu server** (the "Talai host") runs the middleware, the
+Next.js app and Ollama (local OCR model). Two accountants use TallyPrime Gold on the LAN
 today; they will open Talai in a browser at `http://<talai-host>:3000`.
 
 ```
@@ -32,11 +32,26 @@ today; they will open Talai in a browser at `http://<talai-host>:3000`.
    `Alt+F3 → Create` then restore a backup, or duplicate the data folder). All
    live‑write validation (section 5) happens against this copy first.
 
-## 2. Talai host setup
+## 2. Talai host setup (Ubuntu server)
 
-Choose one:
+### Option A — installer script (recommended)
 
-### Option A — bare processes (Linux/macOS/Windows)
+```bash
+sudo apt-get install -y git
+git clone <repo> /srv/talai-src && cd /srv/talai-src
+sudo bash deploy/install-ubuntu.sh            # WITH_OLLAMA=0 to skip the OCR model
+sudo nano /opt/talai/middleware/.env          # TALLY_HOST, TALLY_COMPANY_NAME, MIDDLEWARE_API_KEY
+sudo nano /opt/talai/.env                     # MIDDLEWARE_API_KEY (same value)
+sudo systemctl restart talai-middleware talai-web
+```
+
+The script installs Node 22, pnpm, uv and Ollama, creates the `talai` service
+user, syncs the code to `/opt/talai`, builds both apps, installs the systemd
+units from `deploy/systemd/`, opens port 3000 in `ufw`, and pulls `gemma3:12b`
+(`OLLAMA_MODEL=gemma3:4b` for a CPU‑only box). Re‑run it after `git pull` to
+upgrade. Logs: `journalctl -u talai-middleware -f`.
+
+### Option B — bare processes (any OS, for development)
 
 ```bash
 git clone <repo> talai && cd talai
@@ -53,7 +68,7 @@ cd middleware && uv run uvicorn talai_middleware.main:app --host 0.0.0.0 --port 
 HOSTNAME=0.0.0.0 PORT=3000 pnpm start
 ```
 
-### Option B — Docker Compose
+### Option C — Docker Compose
 
 ```bash
 cp .env.example .env && cp middleware/.env.example middleware/.env   # edit both
@@ -133,14 +148,21 @@ Keep `TALLY_WRITE_ENABLED=false`.
 
 ## 6. Running as services
 
-- **Linux (systemd):** two unit files, `talai-middleware.service`
-  (`ExecStart=/path/uv run uvicorn talai_middleware.main:app --host 0.0.0.0 --port 8000`,
-  `WorkingDirectory=/path/talai/middleware`) and `talai-web.service`
-  (`ExecStart=/usr/bin/pnpm start`, `Environment=HOSTNAME=0.0.0.0 PORT=3000`).
-  `Restart=always`.
-- **Windows:** use NSSM (`nssm install TalaiMiddleware ...`) or Task Scheduler
-  "At startup" tasks, or Docker Desktop with Option B.
-- **macOS:** `launchd` plists in `~/Library/LaunchAgents`, `KeepAlive=true`.
+`deploy/systemd/talai-middleware.service` and `talai-web.service` are installed
+by the script (Option A). They run as the `talai` user, restart on failure, run
+`alembic upgrade head` before the middleware starts, and read the two `.env`
+files. Ollama installs its own `ollama.service`. Reboot test:
+`sudo reboot`, then `systemctl status talai-middleware talai-web ollama`.
+
+### OCR model check
+
+```bash
+uv run --project middleware python scripts/check_ocr.py --sample
+```
+
+Confirms Ollama is reachable on 11434, the configured model is pulled, and prints
+an extraction from a generated sample bill. See `docs/OCR_LOCAL_LLM.md` for
+sizing and the accuracy gate (T‑L09).
 
 ## 7. Backups
 

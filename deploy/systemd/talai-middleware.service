@@ -1,0 +1,22 @@
+[Unit]
+Description=Talai middleware (FastAPI, Tally XML client)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=talai
+Group=talai
+WorkingDirectory=/opt/talai/middleware
+EnvironmentFile=/opt/talai/middleware/.env
+ExecStartPre=/home/talai/.local/bin/uv run alembic upgrade head
+ExecStart=/home/talai/.local/bin/uv run uvicorn talai_middleware.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/talai/middleware/data
+
+[Install]
+WantedBy=multi-user.target

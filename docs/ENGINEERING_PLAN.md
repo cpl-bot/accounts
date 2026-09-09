@@ -36,11 +36,14 @@ Companion documents:
 
 **Non‑goals for v1** (tracked in `DECISIONS.md` as open items)
 
-- OCR of uploaded bills (interface + mock only; a provider is a product decision).
-- Banking, Journal Voucher, Customers/Vendors CRUD, GSTR‑2B, User & Access pages
+- Banking, Journal Voucher, Customers CRUD, GSTR‑2B, User & Access pages
   (remain "coming soon" but are routed and wired for data where cheap).
 - Multi‑company, multi‑tenant, or cloud (Supabase) deployment.
 - Altering or deleting existing Tally vouchers/masters.
+
+Decided on 2026‑09‑09 and **added to v1**: vendor ledger creation (§3.8), a
+user‑configurable gross‑profit formula (§3.9), and OCR through a local LLM
+(§3.10).
 
 ---
 
@@ -286,12 +289,106 @@ Errors follow `{error: {code, message, details?}}` with proper HTTP status.
 }
 ```
 
+### 3.8 Vendor ledger creation (DECISIONS A4)
+
+Talai may create a **Sundry Creditors** ledger when a bill names a party Tally
+does not know. The flow is deliberately explicit so a typo never becomes a
+duplicate vendor.
+
+1. `GET /ledgers/lookup?name=<text>` → `{found, ledger?, suggestions:[Ledger]}`.
+   `found` is an exact, case‑insensitive match; `suggestions` are up to 5
+   near‑matches (normalised: lower‑case, punctuation and "pvt/ltd/private/limited"
+   tokens stripped, difflib ratio ≥ 0.8) restricted to Sundry Creditors.
+2. `DraftPurchaseBill.party` gains `create_if_missing: bool` (default `false`).
+   Validation: party missing and flag false → error `LEDGER_NOT_FOUND` with
+   `details.can_create=true` and `details.suggestions`; flag true → warning
+   `LEDGER_WILL_BE_CREATED`; flag true but a suggestion has ratio ≥ 0.95 →
+   error `LEDGER_POSSIBLE_DUPLICATE` (user must pick the existing one or rename).
+3. Push: for a draft with the flag, the middleware first sends an **Import
+   Ledger** envelope (`NAME`, `PARENT=Sundry Creditors`, `ISBILLWISEON=Yes`,
+   `GSTIN`, `PARTYGSTIN`, `GSTREGISTRATIONTYPE`, `LEDSTATENAME`, `ADDRESS.LIST`,
+   `MAILINGNAME`, `REMOTEID=<draft id>-party`), parses `CREATED`, inserts the
+   ledger into the replica, then sends the voucher. Dry run stores both XMLs on
+   the draft (`generated_xml`, `generated_ledger_xml`). A failed ledger create
+   fails the draft before any voucher request is sent.
+4. `POST /ledgers` (`VendorLedgerCreate`) creates a vendor directly from the
+   Vendors screen with the same envelope; dry run returns `{dry_run:true,
+   generated_xml}` instead of writing.
+5. `ledgers` rows created by Talai carry `source='talai'` until the next pull
+   confirms them from Tally (`source='tally'`).
+
+### 3.9 Configurable gross‑profit formula (DECISIONS A8)
+
+`GET/PUT /settings/dashboard` → `DashboardFormula`:
+
+```json
+{
+  "gross_profit_mode": "simple" | "trading",
+  "stock_source": "tally" | "manual",
+  "manual_opening_stock": null | "123.45",
+  "manual_closing_stock": null | "123.45",
+  "revenue_groups": ["Sales Accounts"],
+  "cost_of_sales_groups": ["Purchase Accounts", "Direct Expenses"]
+}
+```
+
+- **simple**: cost of sales = Σ cost_of_sales_groups for the period.
+- **trading**: cost of sales = opening stock + Σ cost_of_sales_groups − closing
+  stock. Opening stock = stock value as on the day before `from`; closing stock
+  = as on `to`.
+- Stock values come from a new `stock_valuations` table (`as_on`, `closing_value`,
+  `source`) filled by the pull sync from Tally's **Stock Summary** report at the
+  period boundaries the dashboard needs (FY start, month starts, today); when a
+  boundary is missing the aggregate falls back to `manual_*` and reports it.
+- `DashboardOverview` gains `formula` (the active `DashboardFormula`),
+  `opening_stock`, `closing_stock`, and `stock_adjustment_status`
+  (`applied | manual | unavailable`). The UI shows the mode next to the gross‑profit
+  figure and edits it from a sidebar widget (`components/dashboard/formula-widget.tsx`).
+
+### 3.10 OCR with a local LLM (DECISIONS A10)
+
+Bills never leave the LAN. The middleware calls **Ollama** on the Ubuntu server.
+
+- Config: `OCR_PROVIDER=none|mock|ollama`, `OLLAMA_BASE_URL=http://localhost:11434`,
+  `OLLAMA_MODEL=gemma3:12b`, `OCR_TIMEOUT_SECONDS=180`, `OCR_MIN_CONFIDENCE=0.7`.
+- `talai_middleware/ocr/`: `OcrProvider` protocol
+  (`extract(data: bytes, mime: str) -> OcrResult`), `MockOcrProvider` (fixture),
+  `OllamaOcrProvider`. PDFs are rasterised page‑by‑page with PyMuPDF (first 3
+  pages, 150 dpi); images are passed as‑is. The request uses Ollama's
+  `/api/chat` with `images` and `format: <JSON schema>` (structured outputs) so
+  the model must return `OcrResult`:
+
+  ```json
+  { "fields": { "supplier_name": "…", "supplier_gstin": "…", "invoice_number": "…",
+                "invoice_date": "YYYY-MM-DD", "due_date": null, "place_of_supply": "…",
+                "line_items": [{"description": "…", "hsn": "…", "quantity": 1, "rate": 0, "amount": 0}],
+                "taxable_value": 0, "cgst": 0, "sgst": 0, "igst": 0, "tds": 0, "other_charges": 0,
+                "grand_total": 0, "narration": null },
+    "confidence": { "supplier_name": 0.0-1.0, "...": 0.0-1.0 },
+    "raw_text": "…" }
+  ```
+
+- Post‑processing (deterministic, tested): normalise dates, GSTIN checksum,
+  arithmetic check (taxable + taxes + other = grand total within ₹1 → raises
+  every confidence by 0.1, else lowers `grand_total` to ≤ 0.5), map
+  `supplier_name` to a ledger via `/ledgers/lookup`.
+- Attachments: `POST /attachments` stores the file and runs OCR in a background
+  task; `GET /attachments`, `GET /attachments/{id}` expose `ocr_status`
+  (`pending|running|done|failed|skipped`), `ocr_result`, `ocr_model`,
+  `ocr_duration_ms`; `POST /attachments/{id}/ocr` re‑runs; `POST
+  /attachments/{id}/draft` creates a `voucher_draft` pre‑filled from the OCR
+  result with `needs_review=true` when any key field (supplier, invoice number,
+  date, grand total) is below `OCR_MIN_CONFIDENCE` or validation fails.
+- Model recommendation and sizing are in `docs/OCR_LOCAL_LLM.md`.
+
 ### 3.7 Configuration (env)
 
 See `middleware/.env.example`. Key variables: `TALLY_HOST`, `TALLY_PORT`,
 `TALLY_COMPANY_NAME`, `TALLY_TIMEOUT_SECONDS`, `TALLY_WRITE_ENABLED`,
 `DATABASE_URL`, `MIDDLEWARE_API_KEY`, `SYNC_INTERVAL_MINUTES`,
-`SYNC_WORKING_HOURS`, `PUSH_BATCH_SIZE`, `AUDIT_STORE_XML`, `CORS_ORIGINS`.
+`SYNC_WORKING_HOURS`, `PUSH_BATCH_SIZE`, `AUDIT_STORE_XML`, `CORS_ORIGINS`,
+`OCR_PROVIDER`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, `OCR_TIMEOUT_SECONDS`,
+`OCR_MIN_CONFIDENCE`.
 
 ---
 

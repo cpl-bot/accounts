@@ -16,12 +16,10 @@ how the project expands.
 Tally stays the single source of truth. Talai's database is a replica plus an
 outbox. Anything Talai shows that disagrees with Tally is a Talai bug.
 
-### A2. Database for v1 ⏳
-**Default:** SQLite file on the LAN host, accessed only by the middleware, with
-Alembic migrations so the same schema moves to Postgres/Supabase later.
-**Decision needed:** confirm Supabase is a *later* phase, not v1. Running a
-cloud database means the middleware must reach the internet and the office data
-leaves the LAN. *Impact:* T‑B03, T‑B04, T‑B20.
+### A2. Database for v1 ✅
+**Decided (2026‑09‑09):** SQLite on the LAN host for v1; everything is verified
+on SQLite before any move to Supabase. Alembic migrations keep the Postgres path
+open. *Impact:* none now; T‑B24 stays in the backlog.
 
 ### A3. Which company/ledgers Talai may touch ⏳
 **Default:** one Tally company, named in `TALLY_COMPANY_NAME`; writes are refused
@@ -30,13 +28,13 @@ happen against a **copy** of the company loaded as a test company.
 **Decision needed:** name of the production company and confirmation a test
 company copy can be created in Tally. *Impact:* T‑B07, T‑L03.
 
-### A4. Write scope for v1 ⏳
-**Default:** create Purchase vouchers only. No alter, no delete, no master
-creation (vendors must already exist as ledgers in Tally). If the vendor is
-missing, the draft is flagged `LEDGER_NOT_FOUND` and someone creates it in Tally.
-**Decision needed:** should Talai be allowed to *create* a vendor ledger when
-the OCR/entry finds a new supplier? (Reasonable for v1.1; increases corruption
-surface.) *Impact:* T‑B12, T‑F09.
+### A4. Write scope for v1 ✅
+**Decided (2026‑09‑09):** create Purchase vouchers **and vendor ledgers**. When a
+bill names a party that does not exist in Tally, the Create Bill form prompts
+the user ("new vendor — create ledger under Sundry Creditors?") with near‑match
+suggestions to avoid duplicates. The ledger is created in the same push, before
+the voucher, and both are audited. Still no alter/delete of anything.
+*Impact:* T‑B23 and T‑F14 move into v1 Phase 2 (see `TASKS.md`); plan §3.8.
 
 ### A5. Voucher numbering ⏳
 **Default:** Tally auto‑numbers; Talai shows its own draft id until the voucher
@@ -44,12 +42,10 @@ is committed, then shows Tally's number.
 **Decision needed:** does the finance team use a manual numbering series for
 purchases? If so, Talai must reserve numbers. *Impact:* T‑B11, T‑B12.
 
-### A6. Who may push to Tally ⏳
-**Default:** any Talai user can create and validate drafts; **pushing** requires
-the middleware flag `TALLY_WRITE_ENABLED=true`, which the administrator sets on
-the LAN host. No per‑user roles in v1 (two users, both accountants).
-**Decision needed:** should one of the two employees be an approver before a
-push? *Impact:* T‑F12, T‑B18 (roles) would move from backlog to v1.
+### A6. Who may push to Tally ✅
+**Decided (2026‑09‑09):** no approval flow. Any Talai user can create, validate
+and push drafts once the administrator has set `TALLY_WRITE_ENABLED=true` on the
+LAN host. Roles/approvals stay in the backlog (T‑B18/T‑F12).
 
 ### A7. Sync cadence and working hours ⏳
 **Default:** pull from Tally every 15 minutes between 08:00 and 20:00 local time
@@ -57,7 +53,7 @@ push? *Impact:* T‑F12, T‑B18 (roles) would move from backlog to v1.
 **Decision needed:** office hours and whether a nightly full re‑pull is acceptable
 (it can block the Tally UI for a minute on large books). *Impact:* T‑B09.
 
-### A8. Dashboard definitions ⏳
+### A8. Dashboard definitions ✅
 **Default (v1):**
 - Revenue = Sales Accounts group for the period.
 - Cost of sales = Purchase Accounts + Direct Expenses (no stock adjustment).
@@ -66,20 +62,29 @@ push? *Impact:* T‑F12, T‑B18 (roles) would move from backlog to v1.
 - Cash & bank = Cash‑in‑Hand + Bank Accounts closing balances as on the period end.
 - DPO = (AP outstanding / purchases in period) × days in period; DSO likewise with sales.
 - Aging buckets: Current (not yet due), 1–30, 31–60, 61–90, 90+ days past due.
-**Decision needed:** confirm these match how the CA reads Tally's P&L
-(Tally's P&L includes opening/closing stock in gross profit). *Impact:* T‑B14.
+**Decided (2026‑09‑09):** the gross‑profit formula is **user‑configurable** from a
+small sidebar widget on the dashboard: *Simple* (above) or *Trading* (Tally’s
+P&L style: cost of sales = opening stock + purchases + direct expenses − closing
+stock). Stock values come from Tally’s Stock Summary as on the period boundaries
+when available, with a manual override. The active formula is shown next to the
+gross‑profit figure. *Impact:* T‑B29, T‑F15 added to Phase 1; plan §3.9.
 
 ### A9. Period selector ⏳
 **Default:** Indian financial year (1 April – 31 March); options: This FY,
 Previous FY, This quarter, This month, Custom range. "vs previous period"
 compares to the same‑length preceding period.
 
-### A10. OCR provider ❓
-**Default (v1):** no OCR. Upload stores the file and opens the Create Bill form
-empty; an `OcrProvider` interface with a mock exists so a provider can be added.
-**Decision needed:** provider choice (Claude vision with structured output vs.
-Google Document AI vs. AWS Textract vs. an Indian GST‑invoice API), the budget
-per bill, and whether bills may leave the LAN. *Impact:* T‑B19, T‑F13.
+### A10. OCR provider ✅ (local LLM)
+**Decided (2026‑09‑09):** bills never leave the LAN. OCR runs on the Ubuntu
+server through **Ollama** with a multimodal open model, **Gemma 3** first
+(`gemma3:12b` with a GPU, `gemma3:4b` CPU‑only), behind the `OcrProvider`
+interface so the model is a config value (`OCR_PROVIDER=ollama`,
+`OLLAMA_MODEL=…`). Extraction uses Ollama structured outputs (JSON schema =
+`DraftPurchaseBill` partial + per‑field confidence). A draft created from OCR
+lands in **Needs Review** when any key field has confidence below 0.7 or a
+validation rule fails. Engineering recommendation and alternatives (Qwen2.5‑VL,
+two‑stage Tesseract + LLM) are in plan §3.10. *Impact:* T‑B19, T‑F13 move into
+Phase 2.
 
 ### A11. Authentication ⏳
 **Default (v1):** none in the UI; the Next.js server holds a shared bearer
@@ -88,13 +93,10 @@ static name from settings.
 **Decision needed:** when multi‑user identity is required (audit trail per
 person). *Impact:* T‑F12, T‑B18.
 
-### A12. Hosting on the LAN ⏳
-**Default:** one always‑on machine on the office LAN (can be the Tally server
-PC itself, or a Mac/Linux box) runs both the middleware (port 8000) and Next.js
-(port 3000). Users open `http://<host>:3000`. Docker Compose is provided as an
-optional alternative.
-**Decision needed:** which machine, and whether it is Windows (affects the
-run‑as‑service instructions). *Impact:* T‑L01, T‑L02.
+### A12. Hosting on the LAN ✅
+**Decided (2026‑09‑09):** a local **Ubuntu server** on the office LAN runs the
+middleware (8000), Next.js (3000) and Ollama (11434). systemd units and an
+install script live in `deploy/`; see `docs/LAN_DEPLOYMENT.md` §2.
 
 ### A13. Bill attachments retention ⏳
 **Default:** stored on the middleware host under `middleware/data/uploads/`,
