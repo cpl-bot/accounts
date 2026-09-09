@@ -24,20 +24,28 @@ import type {
   Draft,
   Ledger,
   LedgerLookupResult,
+  PushResult,
   Settings,
   SyncRun,
   TallyStatus,
 } from './schema'
 
+// Shaped like the middleware's `TallyStatus` (api/schemas.py), not the
+// frontend's convenience view — the whole point of these fixtures is to
+// stand in for the real backend, so they must drift with it, not with us.
 export function demoTallyStatus(): TallyStatus {
+  const reachable = tallyConnection.status === 'connected'
   return {
-    connected: tallyConnection.status === 'connected',
-    host: tallyConnection.ip,
-    port: tallyConnection.port,
-    company: tallyConnection.company,
+    reachable,
+    companies: reachable ? [{ name: tallyConnection.company }] : [],
+    active_company: reachable ? tallyConnection.company : null,
+    expected_company: tallyConnection.company,
+    company_match: reachable,
     latency_ms: 42,
-    write_enabled: false,
     checked_at: new Date().toISOString(),
+    write_enabled: false,
+    breaker_open: false,
+    error: reachable ? null : 'Connection refused',
   }
 }
 
@@ -47,7 +55,7 @@ export function demoSettings(): Settings {
     tally_port: tallyConnection.port,
     tally_company_name: tallyConnection.company,
     sync_interval_minutes: 15,
-    write_enabled: false,
+    tally_write_enabled: false,
   }
 }
 
@@ -59,6 +67,7 @@ export function demoDashboardFormula(): DashboardFormula {
     manual_closing_stock: null,
     revenue_groups: ['Sales Accounts'],
     cost_of_sales_groups: ['Purchase Accounts', 'Direct Expenses'],
+    warnings: [],
   }
 }
 
@@ -130,22 +139,58 @@ export function demoBills(direction: 'payable' | 'receivable' = 'payable'): Bill
   }
 }
 
+// One backend-shaped `DraftOut` with every field present, so callers that
+// need a draft in a particular state only spell out what differs.
+export function demoDraft(overrides: Partial<Draft> & { id: string }): Draft {
+  const now = new Date().toISOString()
+  return {
+    status: 'validated',
+    payload: null,
+    errors: [],
+    generated_xml: null,
+    generated_ledger_xml: null,
+    dry_run: false,
+    tally_voucher_number: null,
+    tally_guid: null,
+    attempts: 0,
+    needs_review: false,
+    review_reasons: [],
+    attachment_id: null,
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  }
+}
+
 export function demoDrafts(): { items: Draft[]; total: number } {
   const now = new Date().toISOString()
   const needsReview = bills.filter((b) => b.status === 'needs_review')
   const items: Draft[] = needsReview.map((b) => ({
     id: `draft-${b.id}`,
     status: 'validated',
-    payload: { party: { ledger_name: b.vendor }, totals: { grand_total: b.totalAmount } },
-    validation_issues: [
+    // The real middleware echoes Decimal fields back as strings.
+    payload: {
+      party: { ledger_name: b.vendor },
+      totals: { grand_total: b.totalAmount.toFixed(2) },
+    },
+    errors: [
       {
         code: 'LEDGER_NOT_FOUND',
         field: 'party.ledger_name',
         message: `Ledger "${b.vendor}" was not found in Tally.`,
         severity: 'error',
+        details: { can_create: true, suggestions: [], best_ratio: 0 },
       },
     ],
+    generated_xml: null,
+    generated_ledger_xml: null,
+    dry_run: false,
+    tally_voucher_number: null,
+    tally_guid: null,
+    attempts: 0,
+    needs_review: false,
     review_reasons: [],
+    attachment_id: null,
     created_at: now,
     updated_at: now,
   }))
@@ -198,10 +243,10 @@ export function demoAttachments(): Attachment[] {
   const uploaded = bills.filter((b) => b.status === 'uploaded' && b.fileName)
   return uploaded.map((b, i) => ({
     id: `att-${b.id}`,
+    draft_id: null,
     file_name: b.fileName as string,
-    content_type: 'application/pdf',
+    mime: 'application/pdf',
     size_bytes: 120_000 + i * 1000,
-    uploaded_at: new Date().toISOString(),
     ocr_status: 'done',
     ocr_model: 'gemma3:12b',
     ocr_duration_ms: 4200,
@@ -227,20 +272,39 @@ export function demoAttachments(): Attachment[] {
       confidence: { supplier_name: 0.92, total: 0.88, invoice_number: 0.6 },
       raw_text: '',
     },
-    ocr: { vendor_guess: b.vendor, total_guess: b.totalAmount, confidence: 0.72 },
+    created_at: new Date().toISOString(),
   }))
 }
 
-export function demoSyncRun(dryRun = true): SyncRun {
+// Mirrors `SyncRunOut`: integer id, `status: "success"`, no per-run dry-run
+// flag (that lives on each push result item).
+export function demoSyncRun(): SyncRun {
   const now = new Date().toISOString()
   return {
-    id: `run-${Date.now()}`,
+    id: Math.floor(Date.now() / 1000),
     kind: 'push',
-    status: 'succeeded',
+    scope: 'drafts',
+    status: 'success',
     started_at: now,
     finished_at: now,
-    dry_run: dryRun,
-    summary: `${syncItems.reduce((s, i) => s + i.count, 0)} records considered`,
+    records_seen: syncItems.reduce((s, i) => s + i.count, 0),
+    records_changed: 0,
+    error: null,
+  }
+}
+
+// Mirrors `PushResponse` in the default write-disabled posture: every draft
+// is validated as a dry run, nothing reaches Tally.
+export function demoPushResult(draftIds: string[] = []): PushResult {
+  return {
+    run: demoSyncRun(),
+    results: draftIds.map((id) => ({
+      draft_id: id,
+      status: 'validated',
+      voucher_number: null,
+      dry_run: true,
+      errors: [],
+    })),
   }
 }
 

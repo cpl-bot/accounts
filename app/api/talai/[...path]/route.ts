@@ -5,11 +5,12 @@ import {
   demoDashboardFormula,
   demoDashboardOverview,
   demoDashboardPayables,
+  demoDraft,
   demoDrafts,
   demoLedgerLookup,
   demoLedgers,
+  demoPushResult,
   demoSettings,
-  demoSyncRun,
   demoTallyStatus,
 } from '@/lib/api/demo-fixtures'
 
@@ -30,7 +31,7 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
   if (method === 'POST' && path === 'tally/test-connection')
     return NextResponse.json(demoTallyStatus())
   if (method === 'GET' && path === 'tally/companies')
-    return NextResponse.json({ companies: [{ name: demoTallyStatus().company ?? 'Demo Co' }] })
+    return NextResponse.json({ companies: demoTallyStatus().companies })
   if (path === 'settings') return NextResponse.json(demoSettings())
   if (method === 'GET' && path === 'dashboard/overview')
     return NextResponse.json(demoDashboardOverview())
@@ -41,18 +42,20 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
     return NextResponse.json(demoBills(direction === 'receivable' ? 'receivable' : 'payable'))
   }
   if (method === 'GET' && path === 'drafts') return NextResponse.json(demoDrafts())
+  if (method === 'POST' && path === 'drafts') {
+    return NextResponse.json(demoDraft({ id: `draft-${Date.now()}`, payload: {} }))
+  }
+  if (method === 'GET' && segments[0] === 'drafts' && segments.length === 2) {
+    return NextResponse.json(demoDraft({ id: segments[1], payload: {} }))
+  }
+  if (method === 'PUT' && segments[0] === 'drafts' && segments.length === 2) {
+    return NextResponse.json(demoDraft({ id: segments[1], payload: {} }))
+  }
   if (method === 'POST' && segments[0] === 'drafts' && segments[2] === 'queue') {
-    return NextResponse.json({
-      id: segments[1],
-      status: 'queued',
-      payload: {},
-      validation_issues: [],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    return NextResponse.json(demoDraft({ id: segments[1], status: 'queued', payload: {} }))
   }
   if (method === 'POST' && path === 'sync/push') {
-    return NextResponse.json({ run: demoSyncRun(true), results: [] })
+    return NextResponse.json(demoPushResult())
   }
   if (method === 'POST' && path === 'attachments') {
     const list = demoAttachments()
@@ -71,17 +74,15 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
     return NextResponse.json(found ?? null)
   }
   if (method === 'POST' && segments[0] === 'attachments' && segments[2] === 'draft') {
-    return NextResponse.json({
-      id: `draft-from-${segments[1]}`,
-      status: 'validated',
-      payload: {},
-      validation_issues: [],
-      needs_review: true,
-      review_reasons: ['Low OCR confidence'],
-      attachment_id: segments[1],
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    return NextResponse.json(
+      demoDraft({
+        id: `draft-from-${segments[1]}`,
+        payload: {},
+        needs_review: true,
+        review_reasons: ['Low OCR confidence'],
+        attachment_id: segments[1],
+      }),
+    )
   }
   if (method === 'GET' && segments[0] === 'ledgers' && segments[1] === 'lookup') {
     return NextResponse.json(demoLedgerLookup(searchParams?.get('name') ?? ''))
@@ -91,11 +92,7 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
     return NextResponse.json({ items, total: items.length })
   }
   if (method === 'POST' && path === 'ledgers') {
-    return NextResponse.json({
-      dry_run: true,
-      generated_xml: '<ENVELOPE/>',
-      ledger: { name: 'New Vendor', parent_group: 'Sundry Creditors', source: 'talai' },
-    })
+    return NextResponse.json({ dry_run: true, generated_xml: '<ENVELOPE/>', ledger: null })
   }
   if (path === 'settings/dashboard') return NextResponse.json(demoDashboardFormula())
 
