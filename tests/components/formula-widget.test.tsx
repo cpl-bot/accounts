@@ -23,7 +23,11 @@ describe('FormulaWidget (§3.9)', () => {
     await user.click(screen.getByRole('button', { name: /save/i }))
 
     await waitFor(() => expect(capturedBody).not.toBeNull())
-    expect((capturedBody as unknown as { gross_profit_mode: string }).gross_profit_mode).toBe('trading')
+    const body = capturedBody as unknown as { gross_profit_mode: string; warnings?: unknown }
+    expect(body.gross_profit_mode).toBe('trading')
+    // Advisory `warnings` are server-reported and must never be echoed back
+    // in the PUT body.
+    expect(body.warnings).toBeUndefined()
   })
 
   it('reveals manual stock inputs only when stock source is Manual', async () => {
@@ -51,5 +55,44 @@ describe('FormulaWidget (§3.9)', () => {
     )
     render(<FormulaWidget stockAdjustmentStatus="unavailable" />)
     expect(await screen.findByText(/unavailable/i)).toBeInTheDocument()
+  })
+
+  it('shows advisory warnings from a loaded formula near the group inputs', async () => {
+    server.use(
+      http.get('/api/talai/settings/dashboard', () =>
+        HttpResponse.json({
+          gross_profit_mode: 'simple',
+          stock_source: 'tally',
+          manual_opening_stock: null,
+          manual_closing_stock: null,
+          revenue_groups: ['Sales', 'Typo Group'],
+          cost_of_sales_groups: [],
+          warnings: ["Group 'Typo Group' is not in the replica"],
+        }),
+      ),
+    )
+    render(<FormulaWidget />)
+    expect(await screen.findByText(/typo group.*not in the replica/i)).toBeInTheDocument()
+  })
+
+  it('shows advisory warnings returned by the PUT response after saving', async () => {
+    server.use(
+      http.put('/api/talai/settings/dashboard', () =>
+        HttpResponse.json({
+          gross_profit_mode: 'simple',
+          stock_source: 'tally',
+          manual_opening_stock: null,
+          manual_closing_stock: null,
+          revenue_groups: [],
+          cost_of_sales_groups: [],
+          warnings: ["Group 'Bad Group' is not in the replica"],
+        }),
+      ),
+    )
+    const user = userEvent.setup()
+    render(<FormulaWidget />)
+    await screen.findByLabelText(/simple/i)
+    await user.click(screen.getByRole('button', { name: /save/i }))
+    expect(await screen.findByText(/bad group.*not in the replica/i)).toBeInTheDocument()
   })
 })

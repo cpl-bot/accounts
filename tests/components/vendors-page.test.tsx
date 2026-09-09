@@ -26,14 +26,18 @@ describe('VendorsPage', () => {
   })
 
   it('creates a vendor via the New Vendor modal and shows a dry-run notice', async () => {
+    let capturedBody: Record<string, unknown> | null = null
     server.use(
-      http.post('/api/talai/ledgers', () =>
-        HttpResponse.json({
+      http.post('/api/talai/ledgers', async ({ request }) => {
+        capturedBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json({
           dry_run: true,
           generated_xml: '<ENVELOPE><LEDGER NAME="Acme Corp"/></ENVELOPE>',
-          ledger: { name: 'Acme Corp', parent_group: 'Sundry Creditors', source: 'talai' },
-        }),
-      ),
+          // Mirrors the real dry-run response: `ledger` is null when nothing
+          // was written to Tally.
+          ledger: null,
+        })
+      }),
     )
 
     const user = userEvent.setup()
@@ -42,15 +46,25 @@ describe('VendorsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /new vendor/i }))
     await user.type(screen.getByLabelText('Name'), 'Acme Corp')
+    await user.selectOptions(screen.getByLabelText(/gst registration type/i), 'composition')
     await user.type(screen.getByLabelText('State'), 'Maharashtra')
-    await user.type(screen.getByLabelText('Billing Address'), '1 Main Street')
+    await user.type(screen.getByLabelText(/billing address/i), '1 Main Street{enter}Suite 4{enter}Mumbai')
 
     await user.click(screen.getByRole('button', { name: /^create vendor$/i }))
 
+    // Dry-run notice shows even though `ledger` came back null.
     expect(await screen.findByText(/dry run/i)).toBeInTheDocument()
     await user.click(screen.getByText(/generated xml/i))
     await waitFor(() =>
       expect(screen.getByText(/LEDGER NAME="Acme Corp"/)).toBeInTheDocument(),
     )
+
+    await waitFor(() => expect(capturedBody).not.toBeNull())
+    const body = capturedBody as unknown as { address: unknown; gst_registration_type: unknown }
+    expect(Array.isArray(body.address)).toBe(true)
+    expect(body.address).toEqual(['1 Main Street', 'Suite 4', 'Mumbai'])
+    // Capitalised to match Tally's <GSTREGISTRATIONTYPE> enum, not the UI's
+    // lowercase option value.
+    expect(body.gst_registration_type).toBe('Composition')
   })
 })

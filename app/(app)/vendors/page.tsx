@@ -9,7 +9,20 @@ import { Modal } from '@/components/ui/modal'
 import { Field, Input, Select, Textarea } from '@/components/ui/field'
 import { apiFetch, ApiError } from '@/lib/api/client'
 import { useLedgers } from '@/lib/api/hooks'
-import { vendorLedgerCreateSchema, vendorLedgerCreateResultSchema } from '@/lib/api/schema'
+import {
+  vendorLedgerCreateSchema,
+  vendorLedgerCreateResultSchema,
+  type GstRegistrationType,
+  type VendorLedgerCreateResult,
+} from '@/lib/api/schema'
+
+// UI keeps lowercase option values; Tally's <GSTREGISTRATIONTYPE> expects
+// the capitalised names the backend schema now enforces.
+const GST_TYPE_TO_API: Record<'regular' | 'composition' | 'unregistered', GstRegistrationType> = {
+  regular: 'Regular',
+  composition: 'Composition',
+  unregistered: 'Unregistered',
+}
 
 function SourceBadge({ source }: { source?: 'tally' | 'talai' }) {
   if (source === 'talai') {
@@ -31,7 +44,7 @@ function NewVendorModal({ open, onClose, onCreated }: { open: boolean; onClose: 
   const [mailingName, setMailingName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ dry_run?: boolean; generated_xml?: string } | null>(null)
+  const [result, setResult] = useState<VendorLedgerCreateResult | null>(null)
   const [xmlOpen, setXmlOpen] = useState(false)
 
   const close = () => {
@@ -50,10 +63,13 @@ function NewVendorModal({ open, onClose, onCreated }: { open: boolean; onClose: 
     setError(null)
     const parsed = vendorLedgerCreateSchema.safeParse({
       name,
-      gst_registration_type: gstType,
+      gst_registration_type: GST_TYPE_TO_API[gstType],
       gstin: gstin || null,
       state,
-      billing_address: billingAddress,
+      address: billingAddress
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean),
       mailing_name: mailingName || undefined,
     })
     if (!parsed.success) {
@@ -79,7 +95,7 @@ function NewVendorModal({ open, onClose, onCreated }: { open: boolean; onClose: 
     <Modal open={open} onClose={close} title="New Vendor">
       {result ? (
         <div className="flex flex-col gap-3">
-          {result.dry_run ? (
+          {result.dry_run || !result.ledger ? (
             <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" />
               <p>Dry run: Tally write is disabled, so no ledger was created yet.</p>
@@ -126,8 +142,8 @@ function NewVendorModal({ open, onClose, onCreated }: { open: boolean; onClose: 
           <Field label="State">
             <Input value={state} onChange={(e) => setState(e.target.value)} />
           </Field>
-          <Field label="Billing Address">
-            <Textarea rows={2} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
+          <Field label="Billing Address (one line per address line)">
+            <Textarea rows={3} value={billingAddress} onChange={(e) => setBillingAddress(e.target.value)} />
           </Field>
           <Field label="Mailing Name (optional)">
             <Input value={mailingName} onChange={(e) => setMailingName(e.target.value)} />
