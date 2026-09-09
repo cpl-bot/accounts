@@ -56,5 +56,5 @@ def bills(
     return BillList(
         items=[BillOut.model_validate(r) for r in rows],
         buckets=aggregates.aging_buckets(session, direction, as_on),
-        total_pending=repo.sum_pending_bills(session, direction),
+        total_pending=repo.sum_pending_bills(session, direction, as_on=as_on),
     )

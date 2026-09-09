@@ -258,10 +258,15 @@ def upsert_voucher(
             select(models.Voucher).where(models.Voucher.tally_guid == guid)
         ).first()
     if row is None:
+        # No GUID to match on, so fall back to the natural key. ``date`` is
+        # part of that key: TallyPrime restarts voucher numbering every
+        # financial year, so Sales #1 of 2025-26 and Sales #1 of 2026-27 are
+        # different vouchers and must not collapse into one row.
         row = session.scalars(
             select(models.Voucher).where(
                 models.Voucher.voucher_number == voucher_number,
                 models.Voucher.voucher_type == voucher_type,
+                models.Voucher.date == voucher_date,
             )
         ).first()
     if row is None:
@@ -363,16 +368,24 @@ def replace_bills(session: Session, direction: str, rows: Sequence[dict]) -> int
     return len(rows)
 
 
-def list_bills(
-    session: Session, direction: str | None = None, as_on: date | None = None
-) -> list[models.Bill]:
-    stmt = select(models.Bill).where(models.Bill.pending_amount != 0)
+def _open_bills_filter(
+    stmt: Select, direction: str | None = None, as_on: date | None = None
+) -> Select:
+    """The one definition of "an open bill" — shared by the list and the sum."""
+    stmt = stmt.where(models.Bill.pending_amount != 0)
     if direction:
         stmt = stmt.where(models.Bill.direction == direction)
     if as_on:
         stmt = stmt.where(
             (models.Bill.bill_date.is_(None)) | (models.Bill.bill_date <= as_on)
         )
+    return stmt
+
+
+def list_bills(
+    session: Session, direction: str | None = None, as_on: date | None = None
+) -> list[models.Bill]:
+    stmt = _open_bills_filter(select(models.Bill), direction, as_on)
     return list(session.scalars(stmt.order_by(models.Bill.due_date)))
 
 
@@ -498,8 +511,11 @@ def table_counts(session: Session) -> dict[str, int]:
     return counts
 
 
-def sum_pending_bills(session: Session, direction: str) -> Decimal:
-    total = session.scalar(
-        select(func.sum(models.Bill.pending_amount)).where(models.Bill.direction == direction)
+def sum_pending_bills(
+    session: Session, direction: str, as_on: date | None = None
+) -> Decimal:
+    """Total pending over exactly the bills ``list_bills`` would return."""
+    stmt = _open_bills_filter(
+        select(func.sum(models.Bill.pending_amount)), direction, as_on
     )
-    return Decimal(total or 0)
+    return Decimal(session.scalar(stmt) or 0)

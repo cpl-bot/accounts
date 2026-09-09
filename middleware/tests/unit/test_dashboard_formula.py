@@ -136,6 +136,57 @@ class TestTradingMode:
         assert overview.opening_stock == Decimal("40000.00")
         assert overview.closing_stock == Decimal("52000.00")
 
+    def test_only_an_opening_valuation_and_no_manual_closing_is_unavailable(
+        self, session
+    ) -> None:
+        """A missing boundary must not be faked as zero and labelled manual."""
+        repo.upsert_stock_valuation(session, date(2026, 4, 30), Decimal("40000.00"))
+        session.commit()
+        simple = aggregates.overview(session, *PERIOD)
+        store(session, gross_profit_mode="trading")
+        overview = aggregates.overview(session, *PERIOD)
+        assert overview.stock_adjustment_status == "unavailable"
+        assert overview.opening_stock == Decimal("0.00")
+        assert overview.closing_stock == Decimal("0.00")
+        assert overview.cost_of_sales == simple.cost_of_sales
+
+    def test_only_a_closing_valuation_and_no_manual_opening_is_unavailable(
+        self, session
+    ) -> None:
+        repo.upsert_stock_valuation(session, date(2026, 6, 30), Decimal("55000.00"))
+        session.commit()
+        simple = aggregates.overview(session, *PERIOD)
+        store(session, gross_profit_mode="trading")
+        overview = aggregates.overview(session, *PERIOD)
+        assert overview.stock_adjustment_status == "unavailable"
+        assert (overview.opening_stock, overview.closing_stock) == (
+            Decimal("0.00"), Decimal("0.00")
+        )
+        assert overview.cost_of_sales == simple.cost_of_sales
+
+    def test_a_tally_opening_plus_a_manual_closing_is_manual_with_both_real_values(
+        self, session
+    ) -> None:
+        repo.upsert_stock_valuation(session, date(2026, 4, 30), Decimal("40000.00"))
+        session.commit()
+        simple = aggregates.overview(session, *PERIOD)
+        store(session, gross_profit_mode="trading",
+              manual_closing_stock=Decimal("52000.00"))
+        overview = aggregates.overview(session, *PERIOD)
+        assert overview.stock_adjustment_status == "manual"
+        assert overview.opening_stock == Decimal("40000.00")
+        assert overview.closing_stock == Decimal("52000.00")
+        assert overview.cost_of_sales == simple.cost_of_sales + Decimal(
+            "40000.00"
+        ) - Decimal("52000.00")
+
+    def test_a_lone_manual_value_is_not_enough(self, session) -> None:
+        store(session, gross_profit_mode="trading", stock_source="manual",
+              manual_opening_stock=Decimal("1000.00"))
+        overview = aggregates.overview(session, *PERIOD)
+        assert overview.stock_adjustment_status == "unavailable"
+        assert overview.opening_stock == Decimal("0.00")
+
     def test_no_stock_values_at_all_is_unavailable_and_degrades_to_simple(
         self, session
     ) -> None:
