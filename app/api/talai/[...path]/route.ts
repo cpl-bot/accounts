@@ -36,7 +36,10 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
     return NextResponse.json(demoDashboardOverview())
   if (method === 'GET' && path === 'dashboard/payables')
     return NextResponse.json(demoDashboardPayables())
-  if (method === 'GET' && path === 'bills') return NextResponse.json(demoBills())
+  if (method === 'GET' && path === 'bills') {
+    const direction = searchParams?.get('direction')
+    return NextResponse.json(demoBills(direction === 'receivable' ? 'receivable' : 'payable'))
+  }
   if (method === 'GET' && path === 'drafts') return NextResponse.json(demoDrafts())
   if (method === 'POST' && segments[0] === 'drafts' && segments[2] === 'queue') {
     return NextResponse.json({
@@ -91,7 +94,7 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
     return NextResponse.json({
       dry_run: true,
       generated_xml: '<ENVELOPE/>',
-      ledger: { name: 'New Vendor', parent: 'Sundry Creditors', source: 'talai' },
+      ledger: { name: 'New Vendor', parent_group: 'Sundry Creditors', source: 'talai' },
     })
   }
   if (path === 'settings/dashboard') return NextResponse.json(demoDashboardFormula())

@@ -72,7 +72,10 @@ describe('CreateBillForm vendor ledger lookup (§3.8)', () => {
               field: 'party.ledger_name',
               message: 'This looks like a near-duplicate of an existing ledger.',
               severity: 'error',
-              details: { can_create: false, suggestions: [{ name: 'BioShield Medical', parent: 'Sundry Creditors' }] },
+              details: {
+                can_create: false,
+                suggestions: [{ name: 'BioShield Medical', parent_group: 'Sundry Creditors' }],
+              },
             },
           ],
           created_at: new Date().toISOString(),

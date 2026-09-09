@@ -5,6 +5,13 @@
 
 import { z } from 'zod'
 
+// The middleware serializes every Python `Decimal` field as a JSON string
+// (e.g. `"86000.00"`) to preserve precision — plain `z.number()` rejects
+// that. `money` accepts either a number or a numeric string and always
+// yields a JS number, so every Decimal-backed field below uses it instead
+// of `z.number()`.
+export const money = z.union([z.string(), z.number()]).transform((v) => Number(v))
+
 export const apiErrorSchema = z.object({
   error: z.object({
     code: z.string(),
@@ -48,10 +55,17 @@ export const settingsSchema = z.object({
 export type Settings = z.infer<typeof settingsSchema>
 
 export const ledgerSchema = z.object({
+  id: z.number().optional(),
   name: z.string(),
-  parent: z.string(),
-  opening_balance: z.number().optional(),
+  parent_group: z.string(),
+  opening_balance: money.nullable().optional(),
+  closing_balance: money.nullable().optional(),
   gstin: z.string().nullable().optional(),
+  mailing_name: z.string().nullable().optional(),
+  address: z.string().nullable().optional(),
+  state: z.string().nullable().optional(),
+  gst_registration_type: z.string().nullable().optional(),
+  is_bill_wise: z.boolean().optional(),
   source: z.enum(['tally', 'talai']).optional(),
 })
 export type Ledger = z.infer<typeof ledgerSchema>
@@ -148,29 +162,28 @@ export const voucherSchema = voucherSummarySchema.extend({
 export type Voucher = z.infer<typeof voucherSchema>
 
 export const agingBucketSchema = z.object({
-  bucket: z.string(),
-  bills: z.number(),
-  amount: z.number(),
-  pct: z.number(),
+  label: z.string(),
+  amount: money,
+  count: z.number(),
 })
 export type AgingBucket = z.infer<typeof agingBucketSchema>
 
 export const billSchema = z.object({
-  id: z.string(),
-  party: z.string(),
-  bill_reference: z.string().nullable(),
-  bill_date: z.string(),
+  id: z.number(),
+  party_ledger: z.string(),
+  bill_name: z.string(),
+  bill_date: z.string().nullable(),
   due_date: z.string().nullable(),
-  amount: z.number(),
-  pending_amount: z.number(),
-  age_days: z.number(),
+  opening_amount: money,
+  pending_amount: money,
+  direction: z.enum(['payable', 'receivable']),
 })
 export type Bill = z.infer<typeof billSchema>
 
 export const billsResponseSchema = z.object({
-  buckets: z.array(agingBucketSchema),
   items: z.array(billSchema),
-  total_pending: z.number(),
+  buckets: z.array(agingBucketSchema),
+  total_pending: money,
 })
 export type BillsResponse = z.infer<typeof billsResponseSchema>
 
@@ -186,60 +199,47 @@ export const dashboardFormulaSchema = z.object({
 })
 export type DashboardFormula = z.infer<typeof dashboardFormulaSchema>
 
+// Mirrors the middleware's flat `DashboardOverview` response exactly
+// (talai_middleware/api/schemas.py `DashboardOverview`) — this has no
+// "vs previous period" figures; the backend does not compute them.
+export const monthlyPointSchema = z.object({
+  month: z.string(),
+  revenue: money,
+  cost_of_sales: money,
+  gross_profit: money,
+})
+
 export const dashboardOverviewSchema = z.object({
-  gross_profit: z.object({ value: z.number(), change_pct: z.number() }),
-  cash_bank: z.object({
-    value: z.number(),
-    change_pct: z.number(),
-    as_on: z.string(),
-    today: z.number(),
-    yesterday: z.number(),
-    accounts: z.array(z.object({ name: z.string(), value: z.number() })),
-  }),
-  pnl: z.object({
-    revenue: z.number(),
-    cost_of_sales: z.number(),
-    gross_profit: z.number(),
-    gross_margin: z.number(),
-    indirect_income: z.number(),
-    indirect_expense: z.number(),
-    net_profit: z.number(),
-  }),
-  income_vs_expense: z.object({ value: z.number(), change_pct: z.number() }),
-  trends: z.object({
-    gross_profit: z.array(z.object({ month: z.string(), value: z.number() })),
-    income_vs_expense: z.array(
-      z.object({ month: z.string(), income: z.number(), expense: z.number() }),
-    ),
-    cash_flow: z.array(z.object({ month: z.string(), inflow: z.number(), outflow: z.number() })),
-  }),
+  period_from: z.string(),
+  period_to: z.string(),
+  revenue: money,
+  cost_of_sales: money,
+  gross_profit: money,
+  gross_margin_pct: money,
+  indirect_income: money,
+  indirect_expense: money,
+  net_profit: money,
+  cash_and_bank: money,
+  trends: z.array(monthlyPointSchema).default([]),
   formula: dashboardFormulaSchema.optional(),
-  opening_stock: z.number().nullable().optional(),
-  closing_stock: z.number().nullable().optional(),
+  opening_stock: money.nullable().optional(),
+  closing_stock: money.nullable().optional(),
   stock_adjustment_status: z.enum(['applied', 'manual', 'unavailable']).optional(),
 })
 export type DashboardOverview = z.infer<typeof dashboardOverviewSchema>
 
-const outstandingSchema = z.object({
-  outstanding: z.number(),
-  on_account: z.number(),
-  change_pct: z.number(),
-  total_amount: z.number(),
-  buckets: z.array(agingBucketSchema),
-  open_bills: z.array(
-    z.object({
-      vendor: z.string(),
-      bill_no: z.string(),
-      amount: z.number(),
-      due: z.string(),
-    }),
-  ),
-})
-
+// Mirrors the middleware's flat `DashboardPayables` exactly. It carries
+// totals, aging buckets and DPO/DSO only — the per-bill "open bills" list
+// for the aging drill-down panel comes from `GET /bills?direction=` instead
+// (see `useBills`), not from this endpoint.
 export const dashboardPayablesSchema = z.object({
   as_on: z.string(),
-  payables: outstandingSchema.extend({ days_payable_outstanding: z.number() }),
-  receivables: outstandingSchema.extend({ days_sales_outstanding: z.number() }),
+  total_payable: money,
+  total_receivable: money,
+  payable_buckets: z.array(agingBucketSchema),
+  receivable_buckets: z.array(agingBucketSchema),
+  dpo_days: money,
+  dso_days: money,
 })
 export type DashboardPayables = z.infer<typeof dashboardPayablesSchema>
 

@@ -155,8 +155,11 @@ export function CreateBillForm() {
           description: it.description,
           item: it.stock_item ?? '',
           godown: it.godown ?? '',
-          quantity: it.quantity,
-          rate: it.rate,
+          // The middleware echoes these back as Decimal-serialized strings
+          // (e.g. "50.00"); coerce so downstream arithmetic and the
+          // <input type="number"> stay numeric.
+          quantity: Number(it.quantity),
+          rate: Number(it.rate),
           hsn: it.hsn ?? '',
         })),
       )

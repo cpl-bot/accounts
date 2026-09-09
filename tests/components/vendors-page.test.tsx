@@ -31,7 +31,7 @@ describe('VendorsPage', () => {
         HttpResponse.json({
           dry_run: true,
           generated_xml: '<ENVELOPE><LEDGER NAME="Acme Corp"/></ENVELOPE>',
-          ledger: { name: 'Acme Corp', parent: 'Sundry Creditors', source: 'talai' },
+          ledger: { name: 'Acme Corp', parent_group: 'Sundry Creditors', source: 'talai' },
         }),
       ),
     )

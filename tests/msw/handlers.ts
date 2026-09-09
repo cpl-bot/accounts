@@ -32,7 +32,10 @@ export const handlers = [
   }),
   http.get(`${API}/dashboard/overview`, () => HttpResponse.json(demoDashboardOverview())),
   http.get(`${API}/dashboard/payables`, () => HttpResponse.json(demoDashboardPayables())),
-  http.get(`${API}/bills`, () => HttpResponse.json(demoBills())),
+  http.get(`${API}/bills`, ({ request }) => {
+    const direction = new URL(request.url).searchParams.get('direction')
+    return HttpResponse.json(demoBills(direction === 'receivable' ? 'receivable' : 'payable'))
+  }),
   http.get(`${API}/drafts`, () => HttpResponse.json(demoDrafts())),
   http.post(`${API}/drafts`, async ({ request }) => {
     const payload = await request.json()
@@ -120,7 +123,7 @@ export const handlers = [
     return HttpResponse.json({
       dry_run: true,
       generated_xml: `<ENVELOPE><LEDGER NAME="${body.name}"/></ENVELOPE>`,
-      ledger: { name: body.name, parent: 'Sundry Creditors', source: 'talai' },
+      ledger: { name: body.name, parent_group: 'Sundry Creditors', source: 'talai' },
     })
   }),
   http.get(`${API}/settings/dashboard`, () => HttpResponse.json(demoDashboardFormula())),

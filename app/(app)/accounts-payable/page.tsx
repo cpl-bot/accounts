@@ -51,17 +51,23 @@ export default function AccountsPayablePage() {
         id: i + 1,
         voucherNo: i + 1,
         fileName: null,
-        vendor: b.party,
-        billingDate: b.bill_date,
-        voucherDate: b.due_date ?? b.bill_date,
-        totalAmount: b.amount,
+        vendor: b.party_ledger,
+        billingDate: b.bill_date ?? '',
+        voucherDate: b.due_date ?? b.bill_date ?? '',
+        totalAmount: b.opening_amount,
         status: 'synced' as const,
         synced: true,
       })) ?? []
 
     const fromDrafts: Bill[] =
       draftsQuery.data?.items.map((d, i) => {
-        const payload = d.payload as { party?: { ledger_name?: string }; totals?: { grand_total?: number } }
+        // The middleware echoes payload.totals.grand_total back as a
+        // Decimal-serialized string (e.g. "25875.00"); Number(...) below
+        // coerces it.
+        const payload = d.payload as {
+          party?: { ledger_name?: string }
+          totals?: { grand_total?: number | string }
+        }
         const hasErrors = d.validation_issues.some((issue) => issue.severity === 'error')
         const needsReview = d.needs_review || hasErrors
         return {
@@ -71,7 +77,7 @@ export default function AccountsPayablePage() {
           vendor: payload.party?.ledger_name ?? 'Unknown vendor',
           billingDate: d.created_at.slice(0, 10),
           voucherDate: d.updated_at.slice(0, 10),
-          totalAmount: payload.totals?.grand_total ?? 0,
+          totalAmount: Number(payload.totals?.grand_total ?? 0),
           status: needsReview ? ('needs_review' as const) : ('uploaded' as const),
           synced: false,
         }
