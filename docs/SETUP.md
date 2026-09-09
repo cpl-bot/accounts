@@ -42,7 +42,7 @@ default inside the example files.
 
 ```bash
 cd middleware
-uv sync                                  # creates .venv and installs deps
+uv sync                                  # creates .venv and installs deps (dev group included)
 uv run alembic upgrade head              # creates data/talai.db
 uv run pytest -q                         # all tests use a fake Tally
 uv run uvicorn talai_middleware.main:app --reload --host 0.0.0.0 --port 8000

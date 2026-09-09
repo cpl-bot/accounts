@@ -44,3 +44,4 @@ middleware/data/
 .ruff_cache/
 htmlcov/
 .coverage
+data/

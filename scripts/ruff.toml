@@ -1,0 +1,8 @@
+# Ruff settings for the user-facing support scripts.
+# They deliberately print to stdout, so T20 (print found) is off here.
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E402"]  # sys.path bootstrap must run before the package imports
