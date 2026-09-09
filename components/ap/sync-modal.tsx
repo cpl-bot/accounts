@@ -79,39 +79,69 @@ export function SyncModal({
   }
 
   if (state === 'done' && result) {
-    const committed = result.results.filter((r) => r.status === 'committed')
-    const failed = result.results.filter((r) => r.status === 'failed')
+    const items = result.results
+    // A push has no dry-run flag of its own — `PushResultItem.dry_run` does.
+    // With TALLY_WRITE_ENABLED off every item comes back
+    // `status: 'validated', dry_run: true`, which is a success, not a failure.
+    const committed = items.filter((r) => r.status === 'committed')
+    const failed = items.filter((r) => r.status === 'failed')
+    const dryRun = items.filter((r) => r.status === 'validated' && r.dry_run)
+    const allDryRun = items.length > 0 && items.every((r) => r.dry_run)
+    const someDryRun = items.some((r) => r.dry_run)
     return (
       <Modal open={open} onClose={reset} title="Sync Results">
-        {result.run.dry_run ? (
+        {someDryRun ? (
           <p className="mb-4 flex items-center gap-2 rounded-lg bg-accent/40 px-3 py-2 text-sm text-foreground">
-            <AlertTriangle className="size-4 shrink-0" /> Dry run — nothing was written to Tally.
+            <AlertTriangle className="size-4 shrink-0" />{' '}
+            {allDryRun
+              ? 'Dry run — nothing was written to Tally.'
+              : 'Some records were only validated as a dry run and were not written to Tally.'}
+          </p>
+        ) : null}
+        {result.run.status === 'failed' ? (
+          <p className="mb-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            <AlertTriangle className="size-4 shrink-0" /> Run #{result.run.id} failed
+            {result.run.error ? `: ${result.run.error}` : '.'}
           </p>
         ) : null}
         <div className="flex flex-col gap-2">
-          {result.results.length === 0 ? (
+          {items.length === 0 ? (
             <p className="text-sm text-muted-foreground">No queued records were found to sync.</p>
           ) : (
-            result.results.map((r) => (
-              <div
-                key={r.draft_id}
-                className={cn(
-                  'flex items-center justify-between rounded-lg border px-3 py-2 text-sm',
-                  r.status === 'committed' ? 'border-success/30 bg-success/5' : 'border-destructive/30 bg-destructive/5',
-                )}
-              >
-                <span className="font-medium">{r.draft_id}</span>
-                {r.status === 'committed' ? (
-                  <span className="text-success">Committed{r.voucher_number ? ` — ${r.voucher_number}` : ''}</span>
-                ) : (
-                  <span className="text-destructive">{r.errors?.join('; ') ?? 'Failed'}</span>
-                )}
-              </div>
-            ))
+            items.map((r) => {
+              const isFailure = r.status === 'failed'
+              const messages = r.errors.map((e) => e.message)
+              return (
+                <div
+                  key={r.draft_id}
+                  className={cn(
+                    'flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm',
+                    isFailure
+                      ? 'border-destructive/30 bg-destructive/5'
+                      : 'border-success/30 bg-success/5',
+                  )}
+                >
+                  <span className="font-medium">{r.draft_id}</span>
+                  {isFailure ? (
+                    <span className="text-right text-destructive">
+                      {messages.length > 0 ? messages.join('; ') : 'Failed'}
+                    </span>
+                  ) : r.status === 'committed' ? (
+                    <span className="text-success">
+                      Committed{r.voucher_number ? ` — ${r.voucher_number}` : ''}
+                    </span>
+                  ) : r.status === 'validated' && r.dry_run ? (
+                    <span className="text-success">Validated (dry run)</span>
+                  ) : (
+                    <span className="text-muted-foreground">{r.status}</span>
+                  )}
+                </div>
+              )
+            })
           )}
         </div>
         <p className="mt-3 text-xs text-muted-foreground">
-          {committed.length} committed, {failed.length} failed.
+          {committed.length} committed, {dryRun.length} validated (dry run), {failed.length} failed.
         </p>
         <Button className="mt-5 h-11 w-full" onClick={reset}>
           Done

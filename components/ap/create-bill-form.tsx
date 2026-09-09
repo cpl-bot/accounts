@@ -60,6 +60,8 @@ function Section({
 
 let nextId = 100
 
+const STOCK_ITEM_REQUIRED = 'Choose a stock item on every line item before saving.'
+
 export function CreateBillForm() {
   const searchParams = useSearchParams()
   const draftId = searchParams?.get('draft') ?? null
@@ -88,7 +90,6 @@ export function CreateBillForm() {
   const [sourceOfSupply, setSourceOfSupply] = useState('Maharashtra')
   const [destinationOfSupply, setDestinationOfSupply] = useState('Maharashtra')
   const [createIfMissing, setCreateIfMissing] = useState(false)
-  const [mailingName, setMailingName] = useState('')
 
   const [items, setItems] = useState<LineItem[]>([
     {
@@ -112,6 +113,10 @@ export function CreateBillForm() {
   const [saving, setSaving] = useState<'idle' | 'saving' | 'error'>('idle')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [queueState, setQueueState] = useState<'idle' | 'queuing' | 'queued' | 'error'>('idle')
+  // Line ids whose stock item is still blank. `ItemPayload.stock_item` is
+  // required on the backend (a blank one 422s with an opaque error), so the
+  // form blocks the save itself and says which line is at fault.
+  const [missingStockItems, setMissingStockItems] = useState<Set<number>>(new Set())
 
   const ledgerLookup = useLedgerLookup(vendorName)
   const attachmentId = draft?.attachment_id ?? existingDraftQuery.data?.attachment_id ?? null
@@ -126,7 +131,10 @@ export function CreateBillForm() {
     if (!loaded || prefilledRef.current === loaded.id) return
     prefilledRef.current = loaded.id
     setDraft(loaded)
-    const payload = loaded.payload as Partial<DraftPurchaseBill> & Record<string, unknown>
+    // `DraftOut.payload` is nullable — a draft created from an attachment
+    // before OCR has nothing to prefill from, so fall back to an empty object
+    // and leave the form's defaults in place.
+    const payload = (loaded.payload ?? {}) as Partial<DraftPurchaseBill> & Record<string, unknown>
     /* eslint-disable react-hooks/set-state-in-effect -- intentional: prefills the form's editable state from a draft fetched via ?draft=<id>, once. */
     if (payload.voucher_date) setVoucherDate(String(payload.voucher_date))
     if (payload.bill_date) setBillDate(String(payload.bill_date))
@@ -152,8 +160,8 @@ export function CreateBillForm() {
       setItems(
         loadedItems.map((it) => ({
           id: ++nextId,
-          description: it.description,
-          item: it.stock_item ?? '',
+          description: it.description ?? '',
+          item: it.stock_item,
           godown: it.godown ?? '',
           // The middleware echoes these back as Decimal-serialized strings
           // (e.g. "50.00"); coerce so downstream arithmetic and the
@@ -208,15 +216,15 @@ export function CreateBillForm() {
         billing_address: billingAddress,
         source_of_supply: sourceOfSupply,
         destination_of_supply: destinationOfSupply,
+        // No `gst_registration_type` / `mailing_name` here: `PartyPayload`
+        // has no such fields and the middleware derives both itself from
+        // gst_treatment/gstin and the ledger name (services/sync_push.py).
         create_if_missing: createIfMissing,
-        ...(createIfMissing
-          ? { gst_registration_type: gstTreatment, mailing_name: mailingName || vendorName }
-          : {}),
       },
       purchase_ledger: purchaseLedger,
       items: items.map((i) => ({
-        description: i.description,
-        stock_item: i.item || undefined,
+        description: i.description || undefined,
+        stock_item: i.item,
         godown: i.godown || undefined,
         quantity: i.quantity,
         rate: i.rate,
@@ -251,6 +259,14 @@ export function CreateBillForm() {
     setSaving('saving')
     setSaveError(null)
     setQueueState('idle')
+    const blankStockItems = items.filter((i) => i.item.trim() === '')
+    if (blankStockItems.length > 0) {
+      setMissingStockItems(new Set(blankStockItems.map((i) => i.id)))
+      setSaveError(STOCK_ITEM_REQUIRED)
+      setSaving('error')
+      return
+    }
+    setMissingStockItems(new Set())
     const payload = buildPayload()
     const parsed = draftPurchaseBillSchema.safeParse(payload)
     if (!parsed.success) {
@@ -288,8 +304,9 @@ export function CreateBillForm() {
     }
   }
 
-  const blockingIssues = draft?.validation_issues.filter((i) => i.severity === 'error') ?? []
-  const warnings = draft?.validation_issues.filter((i) => i.severity === 'warning') ?? []
+  // `DraftOut.errors` carries both blocking errors and advisory warnings.
+  const blockingIssues = draft?.errors.filter((i) => i.severity === 'error') ?? []
+  const warnings = draft?.errors.filter((i) => i.severity === 'warning') ?? []
   const canQueue = draft != null && blockingIssues.length === 0 && draft.status !== 'queued'
 
   const needsReview = draft?.needs_review || existingDraftQuery.data?.needs_review
@@ -402,13 +419,10 @@ export function CreateBillForm() {
                   </label>
                   {createIfMissing ? (
                     <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <Field label="Mailing Name">
-                        <Input
-                          value={mailingName}
-                          placeholder={vendorName}
-                          onChange={(e) => setMailingName(e.target.value)}
-                        />
-                      </Field>
+                      {/* No Mailing Name input: the middleware sets the new
+                          ledger's mailing name to the ledger name itself and
+                          derives its GST registration type from the GST
+                          treatment above (services/sync_push.py). */}
                       <Field label="State">
                         <Input value={sourceOfSupply} onChange={(e) => setSourceOfSupply(e.target.value)} />
                       </Field>
@@ -490,7 +504,7 @@ export function CreateBillForm() {
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
+                {items.map((it, index) => (
                   <tr key={it.id} className="border-b border-border/60 align-top">
                     <td className="px-2 py-2">
                       <Input
@@ -505,24 +519,40 @@ export function CreateBillForm() {
                     <td className="px-2 py-2">
                       <Select
                         value={it.item}
-                        onChange={(e) =>
+                        aria-invalid={missingStockItems.has(it.id) || undefined}
+                        aria-label={`Item for line ${index + 1}`}
+                        onChange={(e) => {
+                          const value = e.target.value
+                          if (value !== '') {
+                            setMissingStockItems((prev) => {
+                              if (!prev.has(it.id)) return prev
+                              const next = new Set(prev)
+                              next.delete(it.id)
+                              return next
+                            })
+                          }
                           setItems((p) =>
                             p.map((x) =>
                               x.id === it.id
                                 ? {
                                     ...x,
-                                    item: e.target.value,
-                                    hsn: e.target.value === 'Nitrile Gloves' ? '4015' : '9018',
+                                    item: value,
+                                    hsn: value === 'Nitrile Gloves' ? '4015' : '9018',
                                   }
                                 : x,
                             ),
                           )
-                        }
+                        }}
                       >
                         <option value="">Select item</option>
                         <option value="Nitrile Gloves">Nitrile Gloves — 4015</option>
                         <option value="Syringes">Syringes — 9018</option>
                       </Select>
+                      {missingStockItems.has(it.id) ? (
+                        <p role="alert" className="mt-1 text-xs text-destructive">
+                          Stock item is required
+                        </p>
+                      ) : null}
                     </td>
                     <td className="px-2 py-2">
                       <Select
@@ -638,24 +668,53 @@ export function CreateBillForm() {
           />
         </Section>
 
-        {draft && draft.validation_issues.length > 0 ? (
+        {draft && draft.errors.length > 0 ? (
           <Section title="Validation Issues">
             <div className="flex flex-col gap-2">
-              {draft.validation_issues.map((issue, i) => (
-                <div
-                  key={i}
-                  className={cnIssue(issue.severity)}
-                >
-                  <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                  <div>
-                    <p className="font-medium">{issue.code}</p>
-                    <p className="text-muted-foreground">
-                      {issue.field ? `${issue.field}: ` : ''}
-                      {issue.message}
-                    </p>
+              {draft.errors.map((issue, i) => {
+                // `details.suggestions` is a list of ledger *names*
+                // (services/validation.py), not ledger objects.
+                const suggestions = issue.details?.suggestions ?? []
+                const isPartyIssue = issue.field.startsWith('party.')
+                return (
+                  <div key={i} className={cnIssue(issue.severity)}>
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    <div>
+                      <p className="font-medium">{issue.code}</p>
+                      <p className="text-muted-foreground">
+                        {issue.field ? `${issue.field}: ` : ''}
+                        {issue.message}
+                      </p>
+                      {suggestions.length > 0 ? (
+                        <div className="mt-2">
+                          <p className="text-xs text-muted-foreground">Did you mean:</p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {suggestions.map((name) =>
+                              isPartyIssue ? (
+                                <button
+                                  key={name}
+                                  type="button"
+                                  onClick={() => setVendorName(name)}
+                                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-accent"
+                                >
+                                  {name}
+                                </button>
+                              ) : (
+                                <span
+                                  key={name}
+                                  className="rounded-full border border-border bg-background px-2.5 py-1 text-xs text-foreground"
+                                >
+                                  {name}
+                                </span>
+                              ),
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Section>
         ) : null}
