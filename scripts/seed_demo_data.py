@@ -83,6 +83,11 @@ def main(argv: list[str] | None = None) -> int:
         puller.pull_masters()
         puller.pull_vouchers(date(2026, 5, 1), date(2026, 6, 30))
         puller.pull_bills()
+        # Stock valuations at the demo period's boundaries, so the dashboard's
+        # trading gross-profit mode (plan §3.9) has something to work with.
+        puller.pull_stock_valuations(
+            [date(2026, 4, 30), date(2026, 5, 31), date(2026, 6, 30)]
+        )
         session.commit()
 
         if not repo.list_drafts(session):
@@ -92,8 +97,8 @@ def main(argv: list[str] | None = None) -> int:
 
         counts = repo.table_counts(session)
         print(f"Seeded {settings.database_url}")
-        for table in ("ledgers", "groups", "stock_items", "vouchers", "bills",
-                      "voucher_drafts"):
+        for table in ("ledgers", "groups", "stock_items", "stock_valuations", "vouchers",
+                      "bills", "voucher_drafts"):
             print(f"  {table:16} {counts.get(table, 0):>6}")
         print("\nStart the middleware and the UI will have data:")
         print("  cd middleware && uv run uvicorn talai_middleware.main:app --port 8000")

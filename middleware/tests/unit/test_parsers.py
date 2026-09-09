@@ -168,3 +168,43 @@ class TestImportResult:
     def test_missing_importresult_is_an_error(self) -> None:
         with pytest.raises(TallyResponseError, match="IMPORTRESULT"):
             P.parse_import_result("<ENVELOPE><BODY><DATA/></BODY></ENVELOPE>")
+
+
+# --------------------------------------------------------------------------
+# Stock Summary (plan §3.9)
+# --------------------------------------------------------------------------
+
+
+class TestParseStockValuation:
+    def test_sums_the_closing_value_of_each_item(self) -> None:
+        xml = """<ENVELOPE><BODY><DATA>
+          <STOCKITEM NAME="Nitrile Gloves"><NAME>Nitrile Gloves</NAME>
+            <CLOSINGVALUE>54000.00</CLOSINGVALUE></STOCKITEM>
+          <STOCKITEM NAME="Carton"><NAME>Carton</NAME>
+            <CLOSINGVALUE>16,000.00</CLOSINGVALUE></STOCKITEM>
+        </DATA></BODY></ENVELOPE>"""
+        assert P.parse_stock_valuation(xml) == Decimal("70000.00")
+
+    def test_prefers_an_explicit_total_element(self) -> None:
+        xml = """<ENVELOPE><BODY><DATA>
+          <STOCKITEM><CLOSINGVALUE>1.00</CLOSINGVALUE></STOCKITEM>
+          <TOTALCLOSINGVALUE>99999.00</TOTALCLOSINGVALUE>
+        </DATA></BODY></ENVELOPE>"""
+        assert P.parse_stock_valuation(xml) == Decimal("99999.00")
+
+    def test_falls_back_to_bare_closing_value_elements(self) -> None:
+        xml = """<ENVELOPE><BODY><DATA><DSPACCINFO>
+          <CLOSINGVALUE>1200.50</CLOSINGVALUE><CLOSINGVALUE>800.50</CLOSINGVALUE>
+        </DSPACCINFO></DATA></BODY></ENVELOPE>"""
+        assert P.parse_stock_valuation(xml) == Decimal("2001.00")
+
+    def test_nested_sub_items_are_not_double_counted(self) -> None:
+        xml = """<ENVELOPE><BODY><DATA>
+          <STOCKITEM NAME="Consumables"><CLOSINGVALUE>1000.00</CLOSINGVALUE>
+            <STOCKITEM NAME="Gloves"><CLOSINGVALUE>600.00</CLOSINGVALUE></STOCKITEM>
+          </STOCKITEM>
+        </DATA></BODY></ENVELOPE>"""
+        assert P.parse_stock_valuation(xml) == Decimal("1000.00")
+
+    def test_an_empty_report_is_none(self) -> None:
+        assert P.parse_stock_valuation("<ENVELOPE><BODY><DATA/></BODY></ENVELOPE>") is None

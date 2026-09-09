@@ -221,3 +221,77 @@ def test_has_errors_ignores_warnings() -> None:
     error = ValidationIssue(code="Y", field="f", message="m")
     assert validation.has_errors([warning]) is False
     assert validation.has_errors([warning, error]) is True
+
+
+# --------------------------------------------------------------------------
+# Vendor ledger creation (plan §3.8.2)
+# --------------------------------------------------------------------------
+
+
+def party(name: str, **extra) -> dict:
+    return {"ledger_name": name, "source_of_supply": "Maharashtra", **extra}
+
+
+def issue_for(issues, code: str):
+    return next(i for i in issues if i.code == code)
+
+
+class TestCreateIfMissing:
+    def test_missing_party_without_the_flag_reports_can_create(self, session) -> None:
+        issues = validation.validate_draft(
+            session, make_payload(party=party("Zenith Chemicals"))
+        )
+        found = issue_for(issues, "LEDGER_NOT_FOUND")
+        assert found.severity == "error"
+        assert found.field == "party.ledger_name"
+        assert found.details["can_create"] is True
+        assert found.details["suggestions"] == []
+        assert found.details["best_ratio"] < 0.8
+
+    def test_missing_party_lists_near_matches(self, session) -> None:
+        issues = validation.validate_draft(
+            session, make_payload(party=party("Sunrise Packaging Pvt Ltd"))
+        )
+        found = issue_for(issues, "LEDGER_NOT_FOUND")
+        assert found.details["suggestions"] == ["Sunrise Packaging"]
+        assert found.details["best_ratio"] >= 0.95
+
+    def test_flag_true_turns_the_error_into_a_warning(self, session) -> None:
+        issues = validation.validate_draft(
+            session, make_payload(party=party("Zenith Chemicals", create_if_missing=True))
+        )
+        assert "LEDGER_NOT_FOUND" not in codes(issues)
+        warning = issue_for(issues, "LEDGER_WILL_BE_CREATED")
+        assert warning.severity == "warning"
+        assert validation.has_errors(issues) is False
+
+    def test_flag_true_with_a_near_identical_name_is_a_duplicate_error(self, session) -> None:
+        issues = validation.validate_draft(
+            session,
+            make_payload(party=party("Sunrise Packaging Pvt Ltd", create_if_missing=True)),
+        )
+        duplicate = issue_for(issues, "LEDGER_POSSIBLE_DUPLICATE")
+        assert duplicate.severity == "error"
+        assert duplicate.details["suggestions"] == ["Sunrise Packaging"]
+        assert "LEDGER_WILL_BE_CREATED" not in codes(issues)
+
+    def test_a_merely_similar_name_may_still_be_created(self, session) -> None:
+        issues = validation.validate_draft(
+            session,
+            make_payload(party=party("Sunrise Packaging Solutions", create_if_missing=True)),
+        )
+        assert "LEDGER_POSSIBLE_DUPLICATE" not in codes(issues)
+        assert "LEDGER_WILL_BE_CREATED" in codes(issues)
+
+    def test_the_flag_does_not_excuse_a_wrong_group(self, session) -> None:
+        issues = validation.validate_draft(
+            session, make_payload(party=party("Metro Hospital", create_if_missing=True))
+        )
+        assert "LEDGER_WRONG_GROUP" in codes(issues)
+
+    def test_a_creditor_in_a_nested_subgroup_is_accepted(self, session) -> None:
+        issues = validation.validate_draft(
+            session, make_payload(party=party("Deccan Traders Private Limited"))
+        )
+        assert "LEDGER_NOT_FOUND" not in codes(issues)
+        assert "LEDGER_WRONG_GROUP" not in codes(issues)

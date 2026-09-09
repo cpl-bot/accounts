@@ -131,3 +131,96 @@ class TestSeedAndValidate:
         out = capsys.readouterr().out
         assert "<REMOTEID>" in out
         assert "Nothing was sent" in out
+
+
+class TestCheckOcr:
+    """``scripts/check_ocr.py`` against a respx-mocked Ollama (plan §3.10)."""
+
+    base = "http://ollama.test:11434"
+
+    @pytest.fixture
+    def script(self):
+        return load("check_ocr")
+
+    def tags(self, *names: str) -> httpx.Response:
+        return httpx.Response(200, json={"models": [{"name": n} for n in names]})
+
+    def chat(self) -> httpx.Response:
+        import json as json_module
+
+        payload = {
+            "fields": {
+                "supplier_name": "BioShield Medical & Co",
+                "invoice_number": "INV/BSM/4471",
+                "invoice_date": "10/06/2026",
+                "taxable_value": 22500,
+                "igst": 4050,
+                "grand_total": 26550,
+                "line_items": [{"description": "Gloves", "quantity": 50, "rate": 450,
+                                "amount": 22500}],
+            },
+            "confidence": {"supplier_name": 0.93, "grand_total": 0.81},
+            "raw_text": "BIOSHIELD MEDICAL & CO\nGrand Total 26,550.00",
+        }
+        return httpx.Response(200, json={"message": {"content": json_module.dumps(payload)}})
+
+    @respx.mock
+    def test_sample_run_exits_zero_and_prints_fields(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("gemma3:12b"))
+        respx.post(f"{self.base}/api/chat").mock(return_value=self.chat())
+        code = script.main(["--base-url", self.base, "--model", "gemma3:12b", "--sample"])
+        out = capsys.readouterr().out
+        assert code == 0
+        assert "is pulled" in out
+        assert "generated sample bill" in out
+        assert "INV/BSM/4471" in out
+        assert "conf 0.93" in out
+        assert "duration" in out and "ms over 1 page" in out
+
+    @respx.mock
+    def test_a_missing_model_exits_non_zero(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("llama3:8b"))
+        code = script.main(["--base-url", self.base, "--model", "gemma3:12b", "--sample"])
+        out = capsys.readouterr().out
+        assert code == 3
+        assert code != 0
+        assert "ollama pull gemma3:12b" in out
+
+    @respx.mock
+    def test_an_unreachable_ollama_exits_two(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(side_effect=httpx.ConnectError("refused"))
+        assert script.main(["--base-url", self.base]) == 2
+        assert "UNREACHABLE" in capsys.readouterr().out
+
+    @respx.mock
+    def test_a_failed_extraction_exits_four(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("gemma3:12b"))
+        respx.post(f"{self.base}/api/chat").mock(side_effect=httpx.ReadTimeout("slow"))
+        assert script.main(["--base-url", self.base, "--sample", "--timeout", "1"]) == 4
+        assert "OCR_TIMEOUT" in capsys.readouterr().out
+
+    @respx.mock
+    def test_a_real_file_is_read(self, script, tmp_path, capsys) -> None:
+        import pymupdf
+
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("gemma3:12b"))
+        respx.post(f"{self.base}/api/chat").mock(return_value=self.chat())
+        document = pymupdf.open()
+        document.new_page().insert_text((72, 100), "Tax Invoice")
+        path = tmp_path / "bill.pdf"
+        path.write_bytes(document.tobytes())
+        document.close()
+        assert script.main(["--base-url", self.base, str(path)]) == 0
+        assert "bill.pdf" in capsys.readouterr().out
+
+    @respx.mock
+    def test_a_missing_file_exits_four(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("gemma3:12b"))
+        assert script.main(["--base-url", self.base, "/nope/missing.pdf"]) == 4
+        assert "no such file" in capsys.readouterr().out
+
+    @respx.mock
+    def test_nothing_to_read_is_still_a_pass(self, script, capsys) -> None:
+        respx.get(f"{self.base}/api/tags").mock(return_value=self.tags("gemma3:12b"))
+        assert script.main(["--base-url", self.base]) == 0
+        assert "Nothing to read" in capsys.readouterr().out

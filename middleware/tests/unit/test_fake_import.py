@@ -86,3 +86,70 @@ def test_import_ledger_creates_a_master(fake_transport: FakeTallyTransport) -> N
     )
     assert result.created == 1
     assert "New Supplier" in [ledger.name for ledger in fake_transport.state.ledgers]
+
+
+# --------------------------------------------------------------------------
+# Vendor ledger creation (plan §3.8)
+# --------------------------------------------------------------------------
+
+
+def test_import_ledger_stores_the_master_details(fake_transport: FakeTallyTransport) -> None:
+    result = P.parse_import_result(
+        fake_transport.send(
+            env.import_ledger(
+                "Bright Steel Traders",
+                "Sundry Creditors",
+                gstin="27AAAAA0000A1Z5",
+                state="Maharashtra",
+                gst_registration_type="Regular",
+                remote_id="draft-9-party",
+            )
+        )
+    )
+    assert result.created == 1 and result.ok
+    created = fake_transport.state.ledger("Bright Steel Traders")
+    assert created is not None
+    assert created.parent == "Sundry Creditors"
+    assert created.gstin == "27AAAAA0000A1Z5"
+    assert created.state == "Maharashtra"
+    assert created.is_bill_wise is True
+
+
+def test_duplicate_ledger_name_is_rejected_with_a_line_error(
+    fake_transport: FakeTallyTransport,
+) -> None:
+    before = len(fake_transport.state.ledgers)
+    result = P.parse_import_result(
+        fake_transport.send(env.import_ledger("BioShield Medical & Co", "Sundry Creditors"))
+    )
+    assert result.created == 0
+    assert result.errors == 1
+    assert "BioShield Medical & Co" in result.line_errors[0]
+    assert "already exists" in result.line_errors[0]
+    assert len(fake_transport.state.ledgers) == before
+
+
+def test_ledger_import_still_refuses_alter_actions(fake_transport: FakeTallyTransport) -> None:
+    import pytest
+
+    from talai_middleware.tally.fake import ForbiddenTallyAction
+
+    xml = env.import_ledger("Whoever", "Sundry Creditors").replace(
+        'ACTION="Create"', 'ACTION="Alter"'
+    )
+    with pytest.raises(ForbiddenTallyAction):
+        fake_transport.send(xml)
+
+
+def test_stock_summary_is_deterministic(fake_transport: FakeTallyTransport) -> None:
+    from datetime import date as date_type
+
+    xml = fake_transport.send(env.stock_summary_report(date_type(2026, 6, 30)))
+    total = P.parse_stock_valuation(xml)
+    assert total == fake_transport.stock_value_on(date_type(2026, 6, 30))
+    assert total == P.parse_stock_valuation(
+        fake_transport.send(env.stock_summary_report(date_type(2026, 6, 30)))
+    )
+    assert total != P.parse_stock_valuation(
+        fake_transport.send(env.stock_summary_report(date_type(2026, 5, 31)))
+    )

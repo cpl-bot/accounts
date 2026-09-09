@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import uuid
-from pathlib import Path
 
-from fastapi import APIRouter, File, Form, Query, UploadFile
+from fastapi import APIRouter, Query
 
 from ..api.schemas import (
-    AttachmentOut,
     DraftList,
     DraftOut,
     DraftPurchaseBill,
@@ -19,17 +15,16 @@ from ..api.schemas import (
 )
 from ..db import models, repo
 from ..services import validation
-from .deps import SessionDep, SettingsDep
+from .deps import SessionDep
 from .errors import ApiError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["drafts"])
 
-ALLOWED_UPLOAD_TYPES = {"application/pdf", "image/png", "image/jpeg"}
 
-
-def _to_out(draft: models.VoucherDraft) -> DraftOut:
+def to_out(session, draft: models.VoucherDraft) -> DraftOut:
+    """A draft as the API exposes it, including its OCR review state (§3.10)."""
     payload = repo.draft_payload(draft)
     return DraftOut(
         id=draft.id,
@@ -37,10 +32,14 @@ def _to_out(draft: models.VoucherDraft) -> DraftOut:
         payload=DraftPurchaseBill.model_validate(payload) if payload else None,
         errors=[ValidationIssue.model_validate(e) for e in repo.draft_errors(draft)],
         generated_xml=draft.generated_xml,
+        generated_ledger_xml=draft.generated_ledger_xml,
         dry_run=draft.dry_run,
         tally_voucher_number=draft.tally_voucher_number,
         tally_guid=draft.tally_guid,
         attempts=draft.attempts,
+        needs_review=draft.needs_review,
+        review_reasons=repo.review_reasons(draft),
+        attachment_id=repo.attachment_id_for_draft(session, draft.id),
         created_at=draft.created_at,
         updated_at=draft.updated_at,
     )
@@ -67,7 +66,7 @@ def create_draft(payload: DraftPurchaseBill, session: SessionDep) -> DraftOut:
     draft.allow_duplicate = payload.allow_duplicate
     _revalidate(session, draft)
     session.flush()
-    return _to_out(draft)
+    return to_out(session, draft)
 
 
 @router.get("/drafts", response_model=DraftList, summary="List drafts")
@@ -77,12 +76,12 @@ def list_drafts(
     limit: int = Query(100, ge=1, le=500),
 ) -> DraftList:
     rows = repo.list_drafts(session, status=status, limit=limit)
-    return DraftList(items=[_to_out(r) for r in rows], total=len(rows))
+    return DraftList(items=[to_out(session, r) for r in rows], total=len(rows))
 
 
 @router.get("/drafts/{draft_id}", response_model=DraftOut, summary="One draft")
 def get_draft(draft_id: str, session: SessionDep) -> DraftOut:
-    return _to_out(_load(session, draft_id))
+    return to_out(session, _load(session, draft_id))
 
 
 @router.put("/drafts/{draft_id}", response_model=DraftOut, summary="Replace a draft")
@@ -96,7 +95,7 @@ def update_draft(
     draft.allow_duplicate = payload.allow_duplicate
     _revalidate(session, draft)
     session.flush()
-    return _to_out(draft)
+    return to_out(session, draft)
 
 
 @router.delete("/drafts/{draft_id}", status_code=204, summary="Delete a draft")
@@ -128,47 +127,4 @@ def queue_draft(draft_id: str, session: SessionDep) -> DraftOut:
         )
     draft.status = "queued"
     session.flush()
-    return _to_out(draft)
-
-
-@router.post(
-    "/attachments", response_model=AttachmentOut, status_code=201, summary="Upload a bill file"
-)
-def upload_attachment(
-    session: SessionDep,
-    settings: SettingsDep,
-    file: UploadFile = File(...),
-    draft_id: str | None = Form(None),
-) -> AttachmentOut:
-    """Stores the file under ``UPLOAD_DIR`` with a random name (plan §6).
-
-    OCR is mocked in v1: the attachment is recorded with ``ocr_status='skipped'``.
-    """
-    if file.content_type not in ALLOWED_UPLOAD_TYPES:
-        raise ApiError(
-            400, "UNSUPPORTED_MEDIA_TYPE", f"'{file.content_type}' is not accepted; "
-            "upload a PDF, PNG or JPEG",
-        )
-    content = file.file.read()
-    limit = settings.max_upload_mb * 1024 * 1024
-    if len(content) > limit:
-        raise ApiError(400, "FILE_TOO_LARGE", f"Files must be under {settings.max_upload_mb} MB")
-
-    directory = Path(settings.upload_dir)
-    directory.mkdir(parents=True, exist_ok=True)
-    suffix = Path(file.filename or "").suffix[:10]
-    stored_name = f"{uuid.uuid4()}{suffix}"
-    (directory / stored_name).write_bytes(content)
-
-    attachment = models.Attachment(
-        draft_id=draft_id,
-        file_name=file.filename or stored_name,
-        mime=file.content_type or "",
-        path=str(directory / stored_name),
-        size_bytes=len(content),
-        ocr_status="skipped",
-        ocr_json=json.dumps({"provider": "none", "note": "OCR is out of scope for v1"}),
-    )
-    session.add(attachment)
-    session.flush()
-    return AttachmentOut.model_validate(attachment)
+    return to_out(session, draft)

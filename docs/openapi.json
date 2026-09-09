@@ -172,6 +172,67 @@
         }
       }
     },
+    "/api/v1/settings/dashboard": {
+      "get": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Gross-profit formula",
+        "operationId": "read_dashboard_formula_api_v1_settings_dashboard_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardFormulaOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "settings"
+        ],
+        "summary": "Set the formula",
+        "description": "Unknown group names are reported in ``warnings``, never rejected: the\nreplica may simply not have been pulled yet.",
+        "operationId": "update_dashboard_formula_api_v1_settings_dashboard_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DashboardFormula-Input"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardFormulaOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/ledgers": {
       "get": {
         "tags": [
@@ -243,6 +304,90 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/LedgerList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "masters"
+        ],
+        "summary": "Create a vendor ledger",
+        "description": "Create a Sundry Creditors ledger in Tally (plan \u00a73.8.4).\n\nWith ``TALLY_WRITE_ENABLED=false`` nothing is sent: the generated envelope\ncomes back so it can be reviewed, exactly like a dry-run push.",
+        "operationId": "create_ledger_api_v1_ledgers_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VendorLedgerCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VendorLedgerCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/ledgers/lookup": {
+      "get": {
+        "tags": [
+          "masters"
+        ],
+        "summary": "Find a vendor",
+        "description": "Exact match plus near-matches under Sundry Creditors (plan \u00a73.8.1).",
+        "operationId": "lookup_ledger_api_v1_ledgers_lookup_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerLookupResponse"
                 }
               }
             }
@@ -902,20 +1047,20 @@
     "/api/v1/attachments": {
       "post": {
         "tags": [
-          "drafts"
+          "attachments"
         ],
         "summary": "Upload a bill file",
-        "description": "Stores the file under ``UPLOAD_DIR`` with a random name (plan \u00a76).\n\nOCR is mocked in v1: the attachment is recorded with ``ocr_status='skipped'``.",
+        "description": "Store the file (random name, plan \u00a76) and queue OCR for it.",
         "operationId": "upload_attachment_api_v1_attachments_post",
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_attachment_api_v1_attachments_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "201": {
@@ -924,6 +1069,192 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "List attachments",
+        "operationId": "list_attachments_api_v1_attachments_get",
+        "parameters": [
+          {
+            "name": "draft_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Draft Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachment_id}": {
+      "get": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "One attachment",
+        "operationId": "get_attachment_api_v1_attachments__attachment_id__get",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachment_id}/ocr": {
+      "post": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Re-run OCR",
+        "description": "Read the file again, synchronously, and replace the stored result.",
+        "operationId": "rerun_ocr_api_v1_attachments__attachment_id__ocr_post",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{attachment_id}/draft": {
+      "post": {
+        "tags": [
+          "attachments"
+        ],
+        "summary": "Create a draft from the OCR result",
+        "operationId": "draft_from_attachment_api_v1_attachments__attachment_id__draft_post",
+        "parameters": [
+          {
+            "name": "attachment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Attachment Id"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DraftOut"
                 }
               }
             }
@@ -1254,6 +1585,27 @@
         ],
         "title": "AgingBucket"
       },
+      "AttachmentList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AttachmentOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "AttachmentList"
+      },
       "AttachmentOut": {
         "properties": {
           "id": {
@@ -1285,7 +1637,57 @@
           },
           "ocr_status": {
             "type": "string",
+            "enum": [
+              "pending",
+              "running",
+              "done",
+              "failed",
+              "skipped"
+            ],
             "title": "Ocr Status"
+          },
+          "ocr_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Model"
+          },
+          "ocr_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Duration Ms"
+          },
+          "ocr_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ocr Error"
+          },
+          "ocr_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OcrResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "type": "string",
@@ -1303,7 +1705,8 @@
           "ocr_status",
           "created_at"
         ],
-        "title": "AttachmentOut"
+        "title": "AttachmentOut",
+        "description": "An uploaded bill file and what OCR made of it (plan \u00a73.10)."
       },
       "BillList": {
         "properties": {
@@ -1490,6 +1893,208 @@
         ],
         "title": "CompanyList"
       },
+      "DashboardFormula-Input": {
+        "properties": {
+          "gross_profit_mode": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "trading"
+            ],
+            "title": "Gross Profit Mode",
+            "default": "simple"
+          },
+          "stock_source": {
+            "type": "string",
+            "enum": [
+              "tally",
+              "manual"
+            ],
+            "title": "Stock Source",
+            "default": "tally"
+          },
+          "manual_opening_stock": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Opening Stock"
+          },
+          "manual_closing_stock": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Closing Stock"
+          },
+          "revenue_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revenue Groups"
+          },
+          "cost_of_sales_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cost Of Sales Groups"
+          }
+        },
+        "type": "object",
+        "title": "DashboardFormula",
+        "description": "How the dashboard computes gross profit (plan \u00a73.9).\n\n``simple``  \u2014 cost of sales = \u03a3 ``cost_of_sales_groups`` for the period.\n``trading`` \u2014 cost of sales = opening stock + \u03a3 groups \u2212 closing stock."
+      },
+      "DashboardFormula-Output": {
+        "properties": {
+          "gross_profit_mode": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "trading"
+            ],
+            "title": "Gross Profit Mode",
+            "default": "simple"
+          },
+          "stock_source": {
+            "type": "string",
+            "enum": [
+              "tally",
+              "manual"
+            ],
+            "title": "Stock Source",
+            "default": "tally"
+          },
+          "manual_opening_stock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Opening Stock"
+          },
+          "manual_closing_stock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Closing Stock"
+          },
+          "revenue_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revenue Groups"
+          },
+          "cost_of_sales_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cost Of Sales Groups"
+          }
+        },
+        "type": "object",
+        "title": "DashboardFormula",
+        "description": "How the dashboard computes gross profit (plan \u00a73.9).\n\n``simple``  \u2014 cost of sales = \u03a3 ``cost_of_sales_groups`` for the period.\n``trading`` \u2014 cost of sales = opening stock + \u03a3 groups \u2212 closing stock."
+      },
+      "DashboardFormulaOut": {
+        "properties": {
+          "gross_profit_mode": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "trading"
+            ],
+            "title": "Gross Profit Mode",
+            "default": "simple"
+          },
+          "stock_source": {
+            "type": "string",
+            "enum": [
+              "tally",
+              "manual"
+            ],
+            "title": "Stock Source",
+            "default": "tally"
+          },
+          "manual_opening_stock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Opening Stock"
+          },
+          "manual_closing_stock": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manual Closing Stock"
+          },
+          "revenue_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Revenue Groups"
+          },
+          "cost_of_sales_groups": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cost Of Sales Groups"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "title": "DashboardFormulaOut",
+        "description": "The stored formula plus any non-blocking complaints about it.\n\n``warnings`` is additive to \u00a73.9: a group name that is not in the replica\nis reported but never rejected, because the replica may simply be stale."
+      },
       "DashboardOverview": {
         "properties": {
           "period_from": {
@@ -1548,6 +2153,31 @@
             },
             "type": "array",
             "title": "Trends"
+          },
+          "formula": {
+            "$ref": "#/components/schemas/DashboardFormula-Output"
+          },
+          "opening_stock": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Opening Stock",
+            "default": "0.00"
+          },
+          "closing_stock": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Closing Stock",
+            "default": "0.00"
+          },
+          "stock_adjustment_status": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "manual",
+              "unavailable"
+            ],
+            "title": "Stock Adjustment Status",
+            "default": "applied"
           }
         },
         "type": "object",
@@ -1687,6 +2317,17 @@
             ],
             "title": "Generated Xml"
           },
+          "generated_ledger_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Ledger Xml"
+          },
           "dry_run": {
             "type": "boolean",
             "title": "Dry Run",
@@ -1718,6 +2359,29 @@
             "type": "integer",
             "title": "Attempts",
             "default": 0
+          },
+          "needs_review": {
+            "type": "boolean",
+            "title": "Needs Review",
+            "default": false
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Review Reasons"
+          },
+          "attachment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachment Id"
           },
           "created_at": {
             "type": "string",
@@ -2307,6 +2971,52 @@
         ],
         "title": "LedgerList"
       },
+      "LedgerLookupResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "found": {
+            "type": "boolean",
+            "title": "Found"
+          },
+          "ledger": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LedgerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "suggestions": {
+            "items": {
+              "$ref": "#/components/schemas/LedgerOut"
+            },
+            "type": "array",
+            "title": "Suggestions"
+          },
+          "best_ratio": {
+            "type": "number",
+            "title": "Best Ratio",
+            "default": 0.0
+          },
+          "can_create": {
+            "type": "boolean",
+            "title": "Can Create",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "found"
+        ],
+        "title": "LedgerLookupResponse",
+        "description": "``GET /ledgers/lookup?name=`` (plan \u00a73.8.1)."
+      },
       "LedgerOut": {
         "properties": {
           "id": {
@@ -2404,6 +3114,11 @@
             "type": "boolean",
             "title": "Is Bill Wise",
             "default": false
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "default": "tally"
           }
         },
         "type": "object",
@@ -2484,11 +3199,311 @@
         ],
         "title": "NamedOut"
       },
+      "OcrFields": {
+        "properties": {
+          "supplier_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Name"
+          },
+          "supplier_gstin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supplier Gstin"
+          },
+          "invoice_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Number"
+          },
+          "invoice_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Date"
+          },
+          "due_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due Date"
+          },
+          "place_of_supply": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place Of Supply"
+          },
+          "line_items": {
+            "items": {
+              "$ref": "#/components/schemas/OcrLineItem"
+            },
+            "type": "array",
+            "title": "Line Items"
+          },
+          "taxable_value": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taxable Value"
+          },
+          "cgst": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cgst"
+          },
+          "sgst": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sgst"
+          },
+          "igst": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Igst"
+          },
+          "tds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tds"
+          },
+          "other_charges": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Other Charges"
+          },
+          "grand_total": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grand Total"
+          },
+          "narration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narration"
+          },
+          "party_ledger_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Party Ledger Name"
+          }
+        },
+        "type": "object",
+        "title": "OcrFields",
+        "description": "What we ask the model to read off a purchase bill."
+      },
+      "OcrLineItem": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hsn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hsn"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          }
+        },
+        "type": "object",
+        "title": "OcrLineItem"
+      },
+      "OcrResult": {
+        "properties": {
+          "fields": {
+            "$ref": "#/components/schemas/OcrFields"
+          },
+          "confidence": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "type": "object",
+            "title": "Confidence"
+          },
+          "raw_text": {
+            "type": "string",
+            "title": "Raw Text",
+            "default": ""
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages"
+          }
+        },
+        "type": "object",
+        "title": "OcrResult",
+        "description": "One reading of one document."
+      },
       "PartyPayload": {
         "properties": {
           "ledger_name": {
             "type": "string",
             "title": "Ledger Name"
+          },
+          "create_if_missing": {
+            "type": "boolean",
+            "title": "Create If Missing",
+            "default": false
           },
           "gstin": {
             "anyOf": [
@@ -2560,7 +3575,8 @@
               "enum": [
                 "masters",
                 "vouchers",
-                "bills"
+                "bills",
+                "stock"
               ]
             },
             "type": "array",
@@ -3237,6 +4253,18 @@
             ],
             "title": "Severity",
             "default": "error"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
           }
         },
         "type": "object",
@@ -3276,6 +4304,121 @@
           "errors"
         ],
         "title": "ValidationResult"
+      },
+      "VendorLedgerCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "parent": {
+            "type": "string",
+            "title": "Parent",
+            "default": "Sundry Creditors"
+          },
+          "gstin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gstin"
+          },
+          "gst_registration_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gst Registration Type"
+          },
+          "mailing_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mailing Name"
+          },
+          "address": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Address"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "is_bill_wise": {
+            "type": "boolean",
+            "title": "Is Bill Wise",
+            "default": true
+          },
+          "allow_duplicate": {
+            "type": "boolean",
+            "title": "Allow Duplicate",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "VendorLedgerCreate",
+        "description": "``POST /ledgers`` \u2014 create a Sundry Creditors ledger (plan \u00a73.8.4)."
+      },
+      "VendorLedgerCreated": {
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "title": "Dry Run",
+            "default": false
+          },
+          "generated_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Xml"
+          },
+          "ledger": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LedgerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "VendorLedgerCreated",
+        "description": "The result of ``POST /ledgers``; ``ledger`` is null on a dry run."
       },
       "VoucherDetail": {
         "properties": {

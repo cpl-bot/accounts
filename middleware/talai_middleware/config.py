@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -77,6 +78,16 @@ class Settings(BaseSettings):
     push_inter_request_delay_ms: int = 250
     max_future_days: int = 0
 
+    # --- OCR (plan §3.10) -------------------------------------------------
+    #: ``none`` disables OCR entirely, ``mock`` returns a bundled fixture,
+    #: ``ollama`` calls the local LLM. Bills never leave the LAN.
+    ocr_provider: Literal["none", "mock", "ollama"] = "none"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "gemma3:12b"
+    ocr_timeout_seconds: float = 180.0
+    #: Below this, a field is listed in a draft's ``review_reasons``.
+    ocr_min_confidence: float = 0.7
+
     # --- Audit / uploads --------------------------------------------------
     audit_store_xml: bool = False
     upload_dir: str = "./data/uploads"
@@ -89,6 +100,11 @@ class Settings(BaseSettings):
         if not upload.is_absolute():
             self.upload_dir = str((MIDDLEWARE_DIR / upload).resolve())
         return self
+
+    @property
+    def ocr_enabled(self) -> bool:
+        """False when ``OCR_PROVIDER=none``: uploads are stored, not read."""
+        return self.ocr_provider != "none"
 
     @property
     def tally_url(self) -> str:

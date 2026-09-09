@@ -10,6 +10,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from decimal import Decimal
 
 from ..audit import AuditEntry, AuditSink, LoggingAuditSink, request_hash
 from . import envelopes as env
@@ -204,6 +205,11 @@ class TallyClient:
         """
         xml = env.report("Day Book", company=self.company, from_date=from_date, to_date=to_date)
         return P.parse_vouchers(self._send(xml, "report:Day Book"))
+
+    def stock_valuation(self, as_on: date) -> Decimal | None:
+        """Total closing stock value as on a date, from the Stock Summary report."""
+        xml = env.stock_summary_report(as_on, company=self.company)
+        return P.parse_stock_valuation(self._send(xml, "report:Stock Summary"))
 
     def bills(self, direction: str) -> list[P.BillRow]:
         report_name = "Bills Payable" if direction == "payable" else "Bills Receivable"

@@ -363,6 +363,55 @@ def parse_bills(source: str | Element, direction: str) -> list[BillRow]:
     return rows
 
 
+#: Elements a Stock Summary export may use for the grand total. Which one (if
+#: any) TallyPrime emits is unverified — see the middleware README's open
+#: questions — so the parser prefers a total when it finds one and otherwise
+#: adds the items up itself.
+STOCK_TOTAL_TAGS = (
+    "TOTALCLOSINGVALUE",
+    "GRANDTOTALCLOSINGVALUE",
+    "CLOSINGVALUETOTAL",
+)
+
+
+def parse_stock_valuation(source: str | Element) -> Decimal | None:
+    """Total closing stock value from a Stock Summary export (plan §3.9).
+
+    Tolerant by design: an explicit total element wins; otherwise the
+    ``CLOSINGVALUE`` of each top-level ``STOCKITEM`` is summed (nested
+    sub-items are skipped, because Tally already rolls them into their
+    parent); failing that, any bare ``CLOSINGVALUE`` elements are summed.
+    Returns ``None`` when the report carries no value at all.
+    """
+    root = _root(source)
+    for tag in STOCK_TOTAL_TAGS:
+        node = next(root.iter(tag), None)
+        if node is not None:
+            value = to_decimal(node.text)
+            if value is not None:
+                return value
+
+    items = _top_level_stock_items(root)
+    if items:
+        values = [to_decimal(node.findtext("CLOSINGVALUE")) for node in items]
+        present = [v for v in values if v is not None]
+        if present:
+            return sum(present, Decimal("0"))
+
+    bare = [to_decimal(node.text) for node in root.iter("CLOSINGVALUE")]
+    present = [v for v in bare if v is not None]
+    return sum(present, Decimal("0")) if present else None
+
+
+def _top_level_stock_items(root: Element) -> list[Element]:
+    """``STOCKITEM`` elements that are not nested inside another ``STOCKITEM``."""
+    nested = {
+        id(child) for node in root.iter("STOCKITEM") for child in node.iter("STOCKITEM")
+        if child is not node
+    }
+    return [node for node in root.iter("STOCKITEM") if id(node) not in nested]
+
+
 def parse_import_result(source: str | Element) -> ImportResult:
     """Parse ``<IMPORTRESULT>`` from an Import Data response."""
     root = _root(source)
@@ -412,6 +461,7 @@ __all__ = [
     "parse_ledgers",
     "parse_named",
     "parse_stock_items",
+    "parse_stock_valuation",
     "parse_vouchers",
     "parse_xml",
     "to_bool",

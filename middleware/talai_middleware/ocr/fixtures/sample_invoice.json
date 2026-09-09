@@ -1,0 +1,40 @@
+{
+  "fields": {
+    "supplier_name": "BioShield Medical & Co",
+    "supplier_gstin": "27AAAAA0000A1Z5",
+    "invoice_number": "INV/BSM/4471",
+    "invoice_date": "10/06/2026",
+    "due_date": "09 Jul 2026",
+    "place_of_supply": "Maharashtra",
+    "line_items": [
+      {
+        "description": "Surgical gloves (box)",
+        "hsn": "4015",
+        "quantity": 50,
+        "rate": 450,
+        "amount": 22500
+      }
+    ],
+    "taxable_value": 22500,
+    "cgst": 0,
+    "sgst": 0,
+    "igst": 4050,
+    "tds": 0,
+    "other_charges": 0,
+    "grand_total": 26550,
+    "narration": "Surgical consumables, June order"
+  },
+  "confidence": {
+    "supplier_name": 0.93,
+    "supplier_gstin": 0.88,
+    "invoice_number": 0.9,
+    "invoice_date": 0.85,
+    "due_date": 0.6,
+    "place_of_supply": 0.7,
+    "taxable_value": 0.9,
+    "igst": 0.86,
+    "grand_total": 0.82,
+    "line_items": 0.75
+  },
+  "raw_text": "BIOSHIELD MEDICAL & CO\nGSTIN 27AAAAA0000A1Z5\nTax Invoice INV/BSM/4471 dated 10/06/2026\nSurgical gloves (box) HSN 4015  50 x 450.00 = 22,500.00\nIGST 18%  4,050.00\nGrand Total  26,550.00\n"
+}

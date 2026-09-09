@@ -181,6 +181,8 @@ def default_state() -> FakeState:
         groups=[
             FakeGroup("Current Liabilities", "", "Current Liabilities"),
             FakeGroup("Sundry Creditors", "Current Liabilities", "Current Liabilities"),
+            # A nested creditor sub-group: the ledger lookup must walk into it.
+            FakeGroup("Local Suppliers", "Sundry Creditors", "Current Liabilities"),
             FakeGroup("Current Assets", "", "Current Assets"),
             FakeGroup("Sundry Debtors", "Current Assets", "Current Assets"),
             FakeGroup("Cash-in-Hand", "Current Assets", "Current Assets"),
@@ -197,6 +199,8 @@ def default_state() -> FakeState:
                        Decimal("-12000.00"), "27AAAAA0000A1Z5", "Maharashtra", True, "412", 908),
             FakeLedger("Sunrise Packaging", "Sundry Creditors", Decimal("-18800.00"),
                        Decimal("0"), "27BBBBB1111B1Z6", "Maharashtra", True, "413", 909),
+            FakeLedger("Deccan Traders Private Limited", "Local Suppliers", Decimal("-4200.00"),
+                       Decimal("0"), "27DDDDD3333D1Z8", "Maharashtra", True, "415", 911),
             FakeLedger("Metro Hospital", "Sundry Debtors", Decimal("59000.00"),
                        Decimal("0"), "27CCCCC2222C1Z7", "Maharashtra", True, "414", 910),
             FakeLedger("Purchase", "Purchase Accounts", Decimal("41000.00"),

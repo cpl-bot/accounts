@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from ..api.schemas import DraftPurchaseBill, ValidationIssue
 from ..db import models, repo
+from . import ledger_lookup
 
 MONEY_TOLERANCE = Decimal("0.01")
 GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z][Z][0-9A-Z]$")
@@ -39,8 +40,16 @@ def has_errors(issues: list[ValidationIssue]) -> bool:
     return any(issue.severity == "error" for issue in issues)
 
 
-def _issue(code: str, field: str, message: str, severity: str = "error") -> ValidationIssue:
-    return ValidationIssue(code=code, field=field, message=message, severity=severity)
+def _issue(
+    code: str,
+    field: str,
+    message: str,
+    severity: str = "error",
+    details: dict | None = None,
+) -> ValidationIssue:
+    return ValidationIssue(
+        code=code, field=field, message=message, severity=severity, details=details
+    )
 
 
 def validate_draft(session: Session, payload: DraftPurchaseBill) -> list[ValidationIssue]:
@@ -69,18 +78,55 @@ def _ledger_group(session: Session, name: str) -> str | None:
 
 
 def _check_party(session: Session, payload: DraftPurchaseBill) -> list[ValidationIssue]:
+    """Party rules, including vendor creation (plan §3.5 and §3.8.2).
+
+    A missing party is an error unless the draft asks Talai to create it; even
+    then it is refused when an existing creditor is a near-certain match, so a
+    typo cannot quietly become a second vendor master.
+    """
     name = payload.party.ledger_name
-    group = _ledger_group(session, name)
-    if group is None:
+    field = "party.ledger_name"
+    result = ledger_lookup.lookup(session, name)
+    details = {
+        "can_create": True,
+        "suggestions": [row.name for row in result.suggestions],
+        "best_ratio": result.best_ratio,
+    }
+
+    if not result.found:
+        if not payload.party.create_if_missing:
+            return [
+                _issue(
+                    "LEDGER_NOT_FOUND", field,
+                    f"Ledger '{name}' does not exist in Tally",
+                    details=details,
+                )
+            ]
+        if result.is_probable_duplicate:
+            return [
+                _issue(
+                    "LEDGER_POSSIBLE_DUPLICATE", field,
+                    f"'{name}' looks like the existing vendor "
+                    f"'{result.suggestions[0].name}'. Pick that ledger or rename this one.",
+                    details=details,
+                )
+            ]
         return [
-            _issue("LEDGER_NOT_FOUND", "party.ledger_name",
-                   f"Ledger '{name}' does not exist in Tally")
+            _issue(
+                "LEDGER_WILL_BE_CREATED", field,
+                f"Ledger '{name}' will be created in Tally under "
+                f"{ledger_lookup.CREDITOR_GROUP} when this bill is committed",
+                severity="warning",
+                details=details,
+            )
         ]
-    if group not in PARTY_GROUPS:
+
+    group = result.ledger.parent_group
+    if group not in ledger_lookup.creditor_group_names(session):
         return [
             _issue(
                 "LEDGER_WRONG_GROUP",
-                "party.ledger_name",
+                field,
                 f"Ledger '{name}' is under '{group}'; a purchase party must be "
                 "under Sundry Creditors",
             )

@@ -59,3 +59,31 @@ def test_env_file_is_read_from_middleware_dir_not_cwd() -> None:
     from talai_middleware.config import MIDDLEWARE_DIR
 
     assert Settings.model_config["env_file"] == str(MIDDLEWARE_DIR / ".env")
+
+
+# --------------------------------------------------------------------------
+# OCR (plan §3.10)
+# --------------------------------------------------------------------------
+
+
+def test_ocr_defaults_are_off() -> None:
+    from talai_middleware.config import Settings
+
+    settings = Settings(_env_file=None)
+    assert settings.ocr_provider == "none"
+    assert settings.ocr_enabled is False
+    assert settings.ollama_base_url == "http://localhost:11434"
+    assert settings.ollama_model == "gemma3:12b"
+    assert settings.ocr_timeout_seconds == 180.0
+    assert settings.ocr_min_confidence == 0.7
+
+
+def test_ocr_provider_is_validated() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    from talai_middleware.config import Settings
+
+    assert Settings(_env_file=None, ocr_provider="ollama").ocr_enabled is True
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, ocr_provider="tesseract")

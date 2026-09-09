@@ -100,6 +100,9 @@ class Ledger(Base, TallySourced):
     state: Mapped[str | None] = mapped_column(String(64))
     gst_registration_type: Mapped[str | None] = mapped_column(String(32))
     is_bill_wise: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: ``tally`` once a pull has seen the ledger in Tally, ``talai`` while it is
+    #: only known to us because we created it (plan §3.8.5).
+    source: Mapped[str] = mapped_column(String(16), default="tally", index=True)
 
 
 class StockItem(Base, TallySourced):
@@ -113,6 +116,22 @@ class StockItem(Base, TallySourced):
     gst_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
     closing_qty: Mapped[Decimal | None] = mapped_column(QTY)
     closing_value: Mapped[Decimal | None] = mapped_column(MONEY)
+
+
+class StockValuation(Base):
+    """Closing stock value as on a date, for the trading gross-profit formula.
+
+    Filled by the pull sync from Tally's Stock Summary report at the period
+    boundaries the dashboard needs (plan §3.9).
+    """
+
+    __tablename__ = "stock_valuations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    as_on: Mapped[date] = mapped_column(Date, unique=True, index=True)
+    closing_value: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0"))
+    source: Mapped[str] = mapped_column(String(16), default="tally")
+    synced_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 class _Lookup(TallySourced):
@@ -214,11 +233,16 @@ class VoucherDraft(Base):
     status: Mapped[str] = mapped_column(String(16), default="draft", index=True)
     validation_errors_json: Mapped[str] = mapped_column(Text, default="[]")
     generated_xml: Mapped[str | None] = mapped_column(Text)
+    generated_ledger_xml: Mapped[str | None] = mapped_column(Text)
     dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
     tally_voucher_number: Mapped[str | None] = mapped_column(String(64))
     tally_guid: Mapped[str | None] = mapped_column(String(64))
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     allow_duplicate: Mapped[bool] = mapped_column(Boolean, default=False)
+    #: Set when a draft was pre-filled from OCR and a human should look at it
+    #: before it is queued (plan §3.10).
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    review_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
     created_by: Mapped[str | None] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -235,8 +259,12 @@ class Attachment(Base):
     mime: Mapped[str] = mapped_column(String(128), default="")
     path: Mapped[str] = mapped_column(String(512))
     size_bytes: Mapped[int] = mapped_column(Integer, default=0)
-    ocr_status: Mapped[str] = mapped_column(String(16), default="pending")
-    ocr_json: Mapped[str | None] = mapped_column(Text)
+    #: pending | running | done | failed | skipped (plan §3.10)
+    ocr_status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    ocr_result_json: Mapped[str | None] = mapped_column(Text)
+    ocr_model: Mapped[str | None] = mapped_column(String(128))
+    ocr_duration_ms: Mapped[int | None] = mapped_column(Integer)
+    ocr_error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

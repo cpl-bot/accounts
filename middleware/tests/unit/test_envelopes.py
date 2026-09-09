@@ -260,3 +260,83 @@ def test_import_ledger_envelope() -> None:
     assert ledger.get("NAME") == "New Supplier"
     assert ledger.findtext("PARENT") == "Sundry Creditors"
     assert ledger.findtext("PARTYGSTIN") == "27AAAAA0000A1Z5"
+
+
+# --------------------------------------------------------------------------
+# Vendor ledger creation (plan §3.8)
+# --------------------------------------------------------------------------
+
+
+def test_import_ledger_golden_envelope() -> None:
+    xml = env.import_ledger(
+        name="Bright Steel Traders",
+        parent="Sundry Creditors",
+        gstin="27AAAAA0000A1Z5",
+        gst_registration_type="Regular",
+        mailing_name="Bright Steel Traders",
+        address=["12 MIDC Road", "Andheri East"],
+        state="Maharashtra",
+        is_bill_wise=True,
+        remote_id="draft-1-party",
+        company="Acme Foods Pvt Ltd",
+    )
+    root = parse(xml)
+    assert text(root, "HEADER/TALLYREQUEST") == "Import Data"
+    desc = "BODY/IMPORTDATA/REQUESTDESC/"
+    assert text(root, desc + "REPORTNAME") == "All Masters"
+    assert text(root, desc + "STATICVARIABLES/SVCURRENTCOMPANY") == "Acme Foods Pvt Ltd"
+
+    ledger = root.find("BODY/IMPORTDATA/REQUESTDATA/TALLYMESSAGE/LEDGER")
+    assert ledger is not None
+    assert ledger.get("ACTION") == "Create"
+    assert ledger.get("NAME") == "Bright Steel Traders"
+    assert ledger.findtext("NAME") == "Bright Steel Traders"
+    assert ledger.findtext("PARENT") == "Sundry Creditors"
+    assert ledger.findtext("ISBILLWISEON") == "Yes"
+    assert ledger.findtext("GSTIN") == "27AAAAA0000A1Z5"
+    assert ledger.findtext("PARTYGSTIN") == "27AAAAA0000A1Z5"
+    assert ledger.findtext("GSTREGISTRATIONTYPE") == "Regular"
+    assert ledger.findtext("LEDSTATENAME") == "Maharashtra"
+    assert ledger.findtext("MAILINGNAME") == "Bright Steel Traders"
+    assert ledger.findtext("REMOTEID") == "draft-1-party"
+    assert [a.text for a in ledger.findall("ADDRESS.LIST/ADDRESS")] == [
+        "12 MIDC Road",
+        "Andheri East",
+    ]
+    assert 'ACTION="Alter"' not in xml and 'ACTION="Delete"' not in xml
+
+
+def test_import_ledger_omits_optional_fields() -> None:
+    root = parse(env.import_ledger(name="Plain Vendor", parent="Sundry Creditors"))
+    ledger = root.find("BODY/IMPORTDATA/REQUESTDATA/TALLYMESSAGE/LEDGER")
+    assert ledger.findtext("GSTIN") is None
+    assert ledger.findtext("GSTREGISTRATIONTYPE") is None
+    assert ledger.findtext("LEDSTATENAME") is None
+    assert ledger.findtext("REMOTEID") is None
+    assert ledger.find("ADDRESS.LIST") is None
+
+
+def test_import_ledger_escapes_ampersands_in_the_name() -> None:
+    xml = env.import_ledger(name="Smith & Co", parent="Sundry Creditors")
+    assert "Smith &amp; Co" in xml
+    root = parse(xml)
+    ledger = root.find("BODY/IMPORTDATA/REQUESTDATA/TALLYMESSAGE/LEDGER")
+    assert ledger.get("NAME") == "Smith & Co"
+
+
+# --------------------------------------------------------------------------
+# Stock Summary, for the trading gross-profit formula (plan §3.9)
+# --------------------------------------------------------------------------
+
+
+def test_stock_summary_report_pins_both_dates_to_as_on() -> None:
+    root = parse(
+        env.stock_summary_report(date(2026, 4, 1), company="Acme Foods Pvt Ltd")
+    )
+    assert text(root, "HEADER/TALLYREQUEST") == "Export"
+    assert text(root, "HEADER/TYPE") == "Report"
+    assert text(root, "HEADER/ID") == "Stock Summary"
+    sv = "BODY/DESC/STATICVARIABLES/"
+    assert text(root, sv + "SVFROMDATE") == "20260401"
+    assert text(root, sv + "SVTODATE") == "20260401"
+    assert text(root, sv + "SVCURRENTCOMPANY") == "Acme Foods Pvt Ltd"

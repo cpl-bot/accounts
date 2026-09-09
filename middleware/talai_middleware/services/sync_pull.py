@@ -22,7 +22,38 @@ from ..tally.errors import TallyError
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ("masters", "vouchers", "bills")
+SCOPES = ("masters", "vouchers", "bills", "stock")
+
+#: Indian financial year: 1 April to 31 March.
+FY_START_MONTH = 4
+
+
+def financial_year_start(today: date) -> date:
+    """1 April of the financial year ``today`` falls in."""
+    year = today.year if today.month >= FY_START_MONTH else today.year - 1
+    return date(year, FY_START_MONTH, 1)
+
+
+def stock_boundaries(today: date | None = None) -> list[date]:
+    """Dates the dashboard needs a stock valuation for (plan §3.9).
+
+    The financial-year start, the first of every month since, and today —
+    de-duplicated and in order.
+    """
+    today = today or date.today()
+    start = financial_year_start(today)
+    dates: list[date] = []
+    cursor = start
+    while cursor <= today:
+        dates.append(cursor)
+        cursor = (
+            date(cursor.year + 1, 1, 1)
+            if cursor.month == 12
+            else date(cursor.year, cursor.month + 1, 1)
+        )
+    if today not in dates:
+        dates.append(today)
+    return dates
 
 
 class SyncPuller:
@@ -57,6 +88,9 @@ class SyncPuller:
                 seen += self._last_seen
             if "bills" in selected:
                 changed += self.pull_bills()
+                seen += self._last_seen
+            if "stock" in selected:
+                changed += self.pull_stock_valuations()
                 seen += self._last_seen
         except TallyError as exc:
             logger.warning("pull failed: %s", exc)
@@ -102,6 +136,8 @@ class SyncPuller:
                 state=row.state,
                 gst_registration_type=row.gst_registration_type,
                 is_bill_wise=row.is_bill_wise,
+                # A ledger Tally knows about is no longer 'talai'-only (§3.8.5).
+                source="tally",
                 **self._sync_columns(row),
             )
             seen += 1
@@ -205,6 +241,27 @@ class SyncPuller:
                     for e in row.inventory_entries
                 ],
             )
+            changed += 1
+        return changed
+
+    # -- stock valuations --------------------------------------------------
+
+    def pull_stock_valuations(self, boundaries: list[date] | None = None) -> int:
+        """Ask Tally for the closing stock value at each boundary (plan §3.9).
+
+        A boundary Tally has no value for is skipped rather than stored as
+        zero: the dashboard would rather report ``unavailable`` than a wrong
+        opening stock.
+        """
+        dates = boundaries if boundaries is not None else stock_boundaries()
+        self._last_seen = len(dates)
+        changed = 0
+        for as_on in dates:
+            value = self.client.stock_valuation(as_on)
+            if value is None:
+                logger.warning("Tally reported no stock value as on %s", as_on)
+                continue
+            repo.upsert_stock_valuation(self.session, as_on, value, source="tally")
             changed += 1
         return changed
 

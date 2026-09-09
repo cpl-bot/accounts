@@ -113,6 +113,8 @@ class FakeTallyTransport:
         name = (collection_type or request_id).strip()
         if name.startswith("Talai"):
             name = name[len("Talai") :]
+        if name.replace(" ", "").lower() == "stocksummary":
+            return _envelope(self._stock_summary(self._as_on(root)))
         min_alter_id = self._alter_id_floor(root)
         handler = {
             "company": self._companies,
@@ -132,6 +134,38 @@ class FakeTallyTransport:
         if handler is None:
             return _failure("Unknown Request", f"Could not understand the request '{name}'")
         return _envelope(handler(min_alter_id))
+
+    @staticmethod
+    def _as_on(root: Element) -> date:
+        """``SVTODATE`` of the request, or today."""
+        from .parsers import to_date
+
+        return to_date(root.findtext("BODY/DESC/STATICVARIABLES/SVTODATE")) or date.today()
+
+    def stock_value_on(self, as_on: date) -> Decimal:
+        """Deterministic closing stock value for a date (plan §3.9).
+
+        Derived from the seed so tests can assert exact figures: each item's
+        seeded closing value, plus a small per-date bump so two boundaries never
+        collapse onto the same number.
+        """
+        bump = Decimal(as_on.month) * Decimal("100") + Decimal(as_on.day)
+        return sum(
+            (item.closing_value + bump for item in self.state.stock_items), Decimal("0")
+        )
+
+    def _stock_summary(self, as_on: date) -> str:
+        """A Stock Summary export: one row per item, no explicit grand total."""
+        bump = Decimal(as_on.month) * Decimal("100") + Decimal(as_on.day)
+        rows = "".join(
+            f'<STOCKITEM NAME="{escape(item.name)}">'
+            + _tag("NAME", item.name)
+            + _tag("CLOSINGBALANCE", f"{item.closing_qty} {item.unit}")
+            + _tag("CLOSINGVALUE", f"{item.closing_value + bump:.2f}")
+            + "</STOCKITEM>"
+            for item in self.state.stock_items
+        )
+        return f"<COLLECTION>{rows}</COLLECTION>"
 
     @staticmethod
     def _alter_id_floor(root: Element) -> int:
@@ -308,8 +342,11 @@ class FakeTallyTransport:
             ignored += 1 if outcome == "ignored" else 0
             if error:
                 line_errors.append((index, error))
-        for node in root.iter("LEDGER"):
-            created += self._create_ledger(node)
+        for index, node in enumerate(root.iter("LEDGER"), start=len(line_errors) + 1):
+            outcome, error = self._create_ledger(node)
+            created += 1 if outcome == "created" else 0
+            if error:
+                line_errors.append((index, error))
         errors = len(line_errors)
         body = (
             "<IMPORTRESULT>"
@@ -400,23 +437,36 @@ class FakeTallyTransport:
         prefix = (voucher_type[:3] or "VCH").upper()
         return f"{prefix}/26-27/{self._voucher_seq:04d}"
 
-    def _create_ledger(self, node: Element) -> int:
+    def _create_ledger(self, node: Element) -> tuple[str, str | None]:
+        """Create a ledger master, or reject it the way TallyPrime would.
+
+        A duplicate name is the failure mode that matters for §3.8: Tally
+        answers with a LINEERROR rather than silently altering the existing
+        master, and the middleware must fail the draft on it.
+        """
         name = (node.findtext("NAME") or node.get("NAME") or "").strip()
-        if not name or self.state.ledger(name):
-            return 0
+        if not name:
+            return "ignored", "Ledger name is empty"
+        if self.state.ledger(name):
+            return "error", (
+                f"Ledger '{name}' already exists. Duplicate names are not allowed."
+            )
+        parent = (node.findtext("PARENT") or "").strip()
+        if parent and not any(g.name == parent for g in self.state.groups):
+            return "error", f"Could not find Group '{parent}'"
         self.state.next_alter_id += 1
         self.state.ledgers.append(
             FakeLedger(
                 name=name,
-                parent=(node.findtext("PARENT") or "").strip(),
-                gstin=node.findtext("PARTYGSTIN"),
+                parent=parent,
+                gstin=node.findtext("PARTYGSTIN") or node.findtext("GSTIN"),
                 state=node.findtext("LEDSTATENAME"),
                 is_bill_wise=to_bool(node.findtext("ISBILLWISEON")),
                 master_id=str(900 + len(self.state.ledgers)),
                 alter_id=self.state.next_alter_id,
             )
         )
-        return 1
+        return "created", None
 
 
 def _num(value: str | None) -> str | None:

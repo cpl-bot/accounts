@@ -143,6 +143,16 @@ def report(
     return _envelope(_header("Export", "Report", name), body)
 
 
+def stock_summary_report(as_on: date, company: str | None = None) -> str:
+    """Export Tally's **Stock Summary** as on one date (plan §3.9).
+
+    Both ``SVFROMDATE`` and ``SVTODATE`` are pinned to ``as_on``: a stock
+    valuation is a balance, not a flow, and Tally reports the closing value of
+    the period it is given.
+    """
+    return report("Stock Summary", company=company, from_date=as_on, to_date=as_on)
+
+
 # --------------------------------------------------------------------------
 # Import payloads
 # --------------------------------------------------------------------------
@@ -375,21 +385,33 @@ def import_ledger(
     mailing_name: str | None = None,
     address: list[str] | None = None,
     state: str | None = None,
+    gst_registration_type: str | None = None,
     is_bill_wise: bool = True,
+    remote_id: str | None = None,
     company: str | None = None,
 ) -> str:
-    """Build a create-only ``Import Data`` envelope for one ledger master."""
+    """Build a create-only ``Import Data`` envelope for one ledger master (§3.8).
+
+    ``gstin`` is emitted twice, as ``GSTIN`` and as ``PARTYGSTIN``: TallyPrime
+    releases disagree about which one a ledger master carries, and sending both
+    is harmless (see the README's open questions).
+    """
     parts = [
         _tag("NAME", name),
         _tag("PARENT", parent),
         _tag("ISBILLWISEON", "Yes" if is_bill_wise else "No"),
         _tag("OPENINGBALANCE", "0.00"),
     ]
+    if remote_id:
+        parts.append(_tag("REMOTEID", remote_id))
     if mailing_name:
         parts.append(_tag("MAILINGNAME", mailing_name))
     if gstin:
+        parts.append(_tag("GSTIN", gstin))
         parts.append(_tag("PARTYGSTIN", gstin))
-        parts.append(_tag("GSTREGISTRATIONTYPE", "Regular"))
+        parts.append(_tag("GSTREGISTRATIONTYPE", gst_registration_type or "Regular"))
+    elif gst_registration_type:
+        parts.append(_tag("GSTREGISTRATIONTYPE", gst_registration_type))
     if state:
         parts.append(_tag("LEDSTATENAME", state))
     if address:

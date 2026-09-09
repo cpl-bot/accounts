@@ -25,7 +25,7 @@ from ..db import models, repo
 from ..tally import envelopes as env
 from ..tally.client import TallyClient
 from ..tally.errors import TallyError
-from . import validation
+from . import ledger_lookup, validation
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,86 @@ def build_voucher(
     )
 
 
+def build_ledger(draft_id: str, payload: DraftPurchaseBill) -> dict:
+    """Map a draft's party onto the fields of an Import Ledger envelope (§3.8.3).
+
+    ``REMOTEID`` is ``<draft id>-party`` so the master and the voucher it was
+    created for stay linked in Tally.
+    """
+    party = payload.party
+    address = [line.strip() for line in (party.billing_address or "").splitlines() if line.strip()]
+    return {
+        "name": party.ledger_name,
+        "parent": ledger_lookup.CREDITOR_GROUP,
+        "gstin": (party.gstin or None),
+        "gst_registration_type": _gst_registration_type(party.gst_treatment, party.gstin),
+        "mailing_name": party.ledger_name,
+        "address": address,
+        "state": party.source_of_supply or None,
+        "is_bill_wise": True,
+        "remote_id": f"{draft_id}-party",
+    }
+
+
+def _gst_registration_type(treatment: str | None, gstin: str | None) -> str:
+    """Tally's ``GSTREGISTRATIONTYPE``, derived from the form's GST treatment."""
+    value = (treatment or "").strip().lower()
+    if value in {"composition", "regular", "consumer", "unregistered"}:
+        return value.capitalize()
+    return "Regular" if gstin else "Unregistered"
+
+
+def _needs_ledger(session: Session, payload: DraftPurchaseBill) -> bool:
+    """True when the draft asks for a vendor the replica does not have."""
+    if not payload.party.create_if_missing:
+        return False
+    return not ledger_lookup.lookup(session, payload.party.ledger_name).found
+
+
+def _create_party_ledger(
+    session: Session,
+    client: TallyClient,
+    draft: models.VoucherDraft,
+    payload: DraftPurchaseBill,
+    fields: dict,
+) -> ValidationIssue | None:
+    """Send the Import Ledger request and mirror the result into the replica.
+
+    Returns the blocking issue on failure, ``None`` on success. The caller must
+    not send the voucher when this returns an issue (plan §3.8.3).
+    """
+    try:
+        result = client.import_ledger(**fields)
+    except TallyError as exc:
+        return ValidationIssue(
+            code="LEDGER_IMPORT_FAILED", field="party.ledger_name", message=exc.message
+        )
+    if not result.ok or result.created < 1:
+        message = "; ".join(result.line_errors) or (
+            f"Tally did not create ledger '{fields['name']}'"
+        )
+        return ValidationIssue(
+            code="LEDGER_IMPORT_FAILED", field="party.ledger_name", message=message
+        )
+    repo.upsert_ledger(
+        session,
+        name=fields["name"],
+        parent_group=fields["parent"],
+        gstin=fields["gstin"],
+        mailing_name=fields["mailing_name"],
+        address=", ".join(fields["address"]) or None,
+        state=fields["state"],
+        gst_registration_type=fields["gst_registration_type"],
+        is_bill_wise=fields["is_bill_wise"],
+        opening_balance=Decimal("0"),
+        closing_balance=Decimal("0"),
+        source="talai",
+        company_name=client.company,
+    )
+    logger.info("created vendor ledger %r in Tally for draft %s", fields["name"], draft.id)
+    return None
+
+
 def _select_drafts(
     session: Session, settings: Settings, draft_ids: list[str] | None
 ) -> list[models.VoucherDraft]:
@@ -161,11 +241,25 @@ def _push_one(
         return PushResultItem(draft_id=draft.id, status="failed", errors=[issue])
 
     draft.generated_xml = xml
+    ledger_fields = build_ledger(draft.id, payload) if _needs_ledger(session, payload) else None
+    draft.generated_ledger_xml = (
+        env.import_ledger(company=client.company, **ledger_fields) if ledger_fields else None
+    )
+
     if not settings.tally_write_enabled:
         draft.status = "validated"
         draft.dry_run = True
         logger.info("dry run: draft %s validated, XML stored, nothing sent", draft.id)
         return PushResultItem(draft_id=draft.id, status="validated", dry_run=True, errors=issues)
+
+    if ledger_fields is not None:
+        failure = _create_party_ledger(session, client, draft, payload, ledger_fields)
+        if failure is not None:
+            repo.set_draft_errors(draft, [failure.model_dump()])
+            draft.status = "failed"
+            draft.attempts += 1
+            logger.warning("draft %s: vendor ledger create failed, voucher not sent", draft.id)
+            return PushResultItem(draft_id=draft.id, status="failed", errors=[failure])
 
     return _send(session, client, draft, voucher, issues)
 

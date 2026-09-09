@@ -15,7 +15,17 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .api import dashboard, drafts, health, masters, settings_routes, sync, tally, vouchers
+from .api import (
+    attachments,
+    dashboard,
+    drafts,
+    health,
+    masters,
+    settings_routes,
+    sync,
+    tally,
+    vouchers,
+)
 from .api.deps import require_token
 from .api.errors import install_error_handlers
 from .config import Settings, get_settings
@@ -33,6 +43,7 @@ PROTECTED_ROUTERS = (
     masters.router,
     vouchers.router,
     drafts.router,
+    attachments.router,
     sync.router,
     dashboard.router,
 )

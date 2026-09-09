@@ -174,3 +174,124 @@ def test_build_voucher_maps_the_payload_onto_tally_entries(env) -> None:
     assert party_line.bill_allocations[0].name == "INV/BSM/7777"
     assert party_line.bill_allocations[0].bill_type == "New Ref"
     assert voucher.inventory_entries[0].stock_item == "Nitrile Gloves"
+
+
+# --------------------------------------------------------------------------
+# Vendor ledger creation during push (plan §3.8.3)
+# --------------------------------------------------------------------------
+
+NEW_PARTY = "Zenith Chemicals"
+
+
+def new_vendor_payload(**party_extra) -> dict:
+    return dict(
+        PAYLOAD,
+        supplier_invoice_no="INV/ZEN/0001",
+        party={
+            "ledger_name": NEW_PARTY,
+            "create_if_missing": True,
+            "gstin": "27ZZZZZ9999Z1Z9",
+            "billing_address": "9 Chemical Lane, Pune",
+            "source_of_supply": "Maharashtra",
+            **party_extra,
+        },
+    )
+
+
+def ledger_requests(transport) -> list[str]:
+    return [xml for xml in transport.requests if "<LEDGER " in xml]
+
+
+def voucher_requests(transport) -> list[str]:
+    return [xml for xml in transport.requests if "<VOUCHER " in xml]
+
+
+def test_dry_run_stores_the_ledger_envelope_and_sends_nothing(env) -> None:
+    session, client, transport, settings = env
+    draft_id = queue_draft(session, new_vendor_payload())
+
+    _run, results = sync_push.push(session, client, settings)
+    session.commit()
+
+    draft = repo.get_draft(session, draft_id)
+    assert results[0].status == "validated" and results[0].dry_run is True
+    assert draft.generated_ledger_xml is not None
+    assert "<PARENT>Sundry Creditors</PARENT>" in draft.generated_ledger_xml
+    assert f"<REMOTEID>{draft_id}-party</REMOTEID>" in draft.generated_ledger_xml
+    assert "<GSTIN>27ZZZZZ9999Z1Z9</GSTIN>" in draft.generated_ledger_xml
+    assert "<ADDRESS>9 Chemical Lane, Pune</ADDRESS>" in draft.generated_ledger_xml
+    assert draft.generated_xml is not None
+    assert ledger_requests(transport) == [] and voucher_requests(transport) == []
+
+
+def test_live_push_creates_the_ledger_before_the_voucher(env) -> None:
+    session, client, transport, settings = env
+    settings = settings.model_copy(update={"tally_write_enabled": True})
+    draft_id = queue_draft(session, new_vendor_payload())
+
+    _run, results = sync_push.push(session, client, settings)
+    session.commit()
+
+    assert results[0].status == "committed"
+    assert transport.state.ledger(NEW_PARTY) is not None
+    assert transport.state.voucher_by_remote_id(draft_id) is not None
+    # order matters: the ledger request must precede the voucher request
+    writes = [i for i, xml in enumerate(transport.requests) if "IMPORTDATA" in xml]
+    assert "<LEDGER " in transport.requests[writes[0]]
+    assert "<VOUCHER " in transport.requests[writes[1]]
+
+    replica = repo.ledger_by_name(session, NEW_PARTY)
+    assert replica is not None
+    assert replica.parent_group == "Sundry Creditors"
+    assert replica.source == "talai"
+    assert replica.gstin == "27ZZZZZ9999Z1Z9"
+
+
+def test_a_failed_ledger_create_fails_the_draft_before_any_voucher_is_sent(env) -> None:
+    session, client, transport, settings = env
+    settings = settings.model_copy(update={"tally_write_enabled": True})
+    # Tally already has the name, but our replica does not: exactly the race
+    # the ledger step exists to survive.
+    transport.state.ledgers.append(
+        type(transport.state.ledgers[0])(name=NEW_PARTY, parent="Sundry Creditors")
+    )
+    draft_id = queue_draft(session, new_vendor_payload())
+
+    _run, results = sync_push.push(session, client, settings)
+    session.commit()
+
+    assert results[0].status == "failed"
+    assert [e.code for e in results[0].errors] == ["LEDGER_IMPORT_FAILED"]
+    assert "already exists" in results[0].errors[0].message
+    assert repo.get_draft(session, draft_id).status == "failed"
+    assert voucher_requests(transport) == []
+    assert repo.ledger_by_name(session, NEW_PARTY) is None
+
+
+def test_an_existing_party_never_triggers_a_ledger_import(env) -> None:
+    session, client, transport, settings = env
+    settings = settings.model_copy(update={"tally_write_enabled": True})
+    payload = dict(PAYLOAD)
+    payload["party"] = dict(PAYLOAD["party"], create_if_missing=True)
+    queue_draft(session, payload)
+
+    _run, results = sync_push.push(session, client, settings)
+    session.commit()
+
+    assert results[0].status == "committed"
+    assert ledger_requests(transport) == []
+
+
+def test_build_ledger_maps_the_party_onto_the_master(env) -> None:
+    session = env[0]
+    from talai_middleware.api.schemas import DraftPurchaseBill
+
+    payload = DraftPurchaseBill.model_validate(new_vendor_payload())
+    fields = sync_push.build_ledger("draft-77", payload)
+    assert fields["name"] == NEW_PARTY
+    assert fields["parent"] == "Sundry Creditors"
+    assert fields["remote_id"] == "draft-77-party"
+    assert fields["state"] == "Maharashtra"
+    assert fields["mailing_name"] == NEW_PARTY
+    assert fields["is_bill_wise"] is True
+    assert session is not None

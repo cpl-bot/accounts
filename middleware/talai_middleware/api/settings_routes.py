@@ -5,8 +5,9 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from ..db import repo
+from ..services import aggregates
 from .deps import SessionDep, SettingsDep
-from .schemas import SettingsPayload, SettingsUpdate
+from .schemas import DashboardFormula, DashboardFormulaOut, SettingsPayload, SettingsUpdate
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -42,3 +43,30 @@ def update_settings(
             repo.set_setting(session, key, str(value))
     session.flush()
     return _current(session, settings)
+
+
+# --------------------------------------------------------------------------
+# The dashboard's gross-profit formula (plan §3.9)
+# --------------------------------------------------------------------------
+
+
+def _formula_out(session, formula: DashboardFormula) -> DashboardFormulaOut:
+    return DashboardFormulaOut(
+        **formula.model_dump(), warnings=aggregates.formula_warnings(session, formula)
+    )
+
+
+@router.get("/dashboard", response_model=DashboardFormulaOut, summary="Gross-profit formula")
+def read_dashboard_formula(session: SessionDep) -> DashboardFormulaOut:
+    return _formula_out(session, aggregates.load_formula(session))
+
+
+@router.put("/dashboard", response_model=DashboardFormulaOut, summary="Set the formula")
+def update_dashboard_formula(
+    payload: DashboardFormula, session: SessionDep
+) -> DashboardFormulaOut:
+    """Unknown group names are reported in ``warnings``, never rejected: the
+    replica may simply not have been pulled yet."""
+    aggregates.save_formula(session, payload)
+    session.flush()
+    return _formula_out(session, payload)

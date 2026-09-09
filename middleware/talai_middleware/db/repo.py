@@ -208,6 +208,34 @@ def group_by_name(session: Session, name: str) -> models.Group | None:
     return session.scalars(select(models.Group).where(models.Group.name == name)).first()
 
 
+def upsert_stock_valuation(
+    session: Session, as_on: date, closing_value: Decimal, source: str = "tally"
+) -> models.StockValuation:
+    """One closing stock value per date (plan §3.9)."""
+    row = session.scalars(
+        select(models.StockValuation).where(models.StockValuation.as_on == as_on)
+    ).first()
+    if row is None:
+        row = models.StockValuation(as_on=as_on)
+        session.add(row)
+    row.closing_value = closing_value
+    row.source = source
+    row.synced_at = _utcnow()
+    session.flush()
+    return row
+
+
+def stock_valuation(session: Session, as_on: date) -> models.StockValuation | None:
+    return session.scalars(
+        select(models.StockValuation).where(models.StockValuation.as_on == as_on)
+    ).first()
+
+
+def list_stock_valuations(session: Session) -> list[models.StockValuation]:
+    stmt = select(models.StockValuation).order_by(models.StockValuation.as_on)
+    return list(session.scalars(stmt))
+
+
 # --------------------------------------------------------------------------
 # Vouchers
 # --------------------------------------------------------------------------
@@ -398,6 +426,48 @@ def draft_errors(draft: models.VoucherDraft) -> list[dict]:
 
 def set_draft_errors(draft: models.VoucherDraft, errors: Sequence[dict]) -> None:
     draft.validation_errors_json = json.dumps(list(errors), default=str)
+
+
+def review_reasons(draft: models.VoucherDraft) -> list[str]:
+    try:
+        return json.loads(draft.review_reasons_json or "[]")
+    except ValueError:
+        return []
+
+
+def set_review_reasons(draft: models.VoucherDraft, reasons: Sequence[str]) -> None:
+    draft.review_reasons_json = json.dumps(list(reasons))
+
+
+# --------------------------------------------------------------------------
+# Attachments
+# --------------------------------------------------------------------------
+
+
+def get_attachment(session: Session, attachment_id: str) -> models.Attachment | None:
+    return session.get(models.Attachment, attachment_id)
+
+
+def list_attachments(
+    session: Session, draft_id: str | None = None, limit: int | None = None
+) -> list[models.Attachment]:
+    stmt = select(models.Attachment)
+    if draft_id:
+        stmt = stmt.where(models.Attachment.draft_id == draft_id)
+    stmt = stmt.order_by(models.Attachment.created_at.desc())
+    if limit:
+        stmt = stmt.limit(limit)
+    return list(session.scalars(stmt))
+
+
+def attachment_id_for_draft(session: Session, draft_id: str) -> str | None:
+    stmt = (
+        select(models.Attachment.id)
+        .where(models.Attachment.draft_id == draft_id)
+        .order_by(models.Attachment.created_at)
+        .limit(1)
+    )
+    return session.scalars(stmt).first()
 
 
 # --------------------------------------------------------------------------
