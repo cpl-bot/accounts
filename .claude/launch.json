@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "board",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/kanban-board.mjs"],
+      "port": 4400,
+      "autoPort": true
+    }
+  ]
+}
