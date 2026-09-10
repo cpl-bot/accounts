@@ -18,6 +18,8 @@ import {
   ledgerLookupResultSchema,
   ledgerSchema,
   settingsSchema,
+  syncRunListSchema,
+  syncStatusSchema,
   tallyStatusSchema,
   type Attachment,
   type BillsResponse,
@@ -27,9 +29,19 @@ import {
   type DashboardPayables,
   type LedgerLookupResult,
   type Settings,
+  type SyncRunList,
+  type SyncScope,
+  type SyncStatus,
   type TallyStatus,
 } from './schema'
 import { z } from 'zod'
+
+/**
+ * Fired on `window` after a manual pull sync completes (see `pullSync`). Every
+ * mounted `useResource` hook refetches on it, so the dashboard, bills and
+ * drafts reflect the freshly pulled data without a page reload.
+ */
+export const SYNC_COMPLETED_EVENT = 'talai:sync-completed'
 
 export type AsyncState<T> = {
   data: T | null
@@ -76,6 +88,12 @@ function useResource<S extends z.ZodTypeAny>(
   }, [path, tick])
 
   const refetch = useCallback(() => setTick((t) => t + 1), [])
+
+  useEffect(() => {
+    if (!path) return
+    window.addEventListener(SYNC_COMPLETED_EVENT, refetch)
+    return () => window.removeEventListener(SYNC_COMPLETED_EVENT, refetch)
+  }, [path, refetch])
 
   return { data, error, loading, refetch }
 }
@@ -224,4 +242,23 @@ export async function createDraftFromAttachment(id: string): Promise<Draft> {
 /** Re-runs OCR on an attachment (e.g. after it failed). */
 export async function rerunOcr(id: string): Promise<Attachment> {
   return apiFetch(`attachments/${id}/ocr`, attachmentSchema, { method: 'POST' })
+}
+
+/** Per-scope last-run status from `/sync/status` (masters/vouchers/bills/stock). */
+export function useSyncStatus(): AsyncState<SyncStatus> {
+  return useResource('sync/status', syncStatusSchema)
+}
+
+/**
+ * Triggers a manual pull sync. Omit `scopes` to pull every scope. Once the
+ * middleware answers (whether or not every scope succeeded — a partial sync
+ * still changed data), every mounted `useResource` hook is told to refetch.
+ */
+export async function pullSync(scopes?: SyncScope[]): Promise<SyncRunList> {
+  const result = await apiFetch('sync/pull', syncRunListSchema, {
+    method: 'POST',
+    body: JSON.stringify(scopes ? { scopes } : {}),
+  })
+  window.dispatchEvent(new Event(SYNC_COMPLETED_EVENT))
+  return result
 }

@@ -9,6 +9,10 @@ the network. It also enforces the v1 safety rule: any ``ACTION="Alter"`` or
 Known quirk it reproduces deliberately: a Day Book export ignores
 ``SVFROMDATE``/``SVTODATE`` (see ``docs/TALLY_INTEGRATION_NOTES.md`` §11), so
 callers must re-filter by date themselves.
+
+Pass ``reachable=False`` to make every request fail, or ``fail_on={"daybook"}``
+to fail only some exports — enough to drive a pull where one scope breaks and
+the others do not.
 """
 
 from __future__ import annotations
@@ -77,10 +81,15 @@ class FakeTallyTransport:
         *,
         reachable: bool = True,
         ignore_date_filter: bool = True,
+        fail_on: set[str] | None = None,
     ) -> None:
         self.state = state or default_state()
         self.reachable = reachable
         self.ignore_date_filter = ignore_date_filter
+        #: normalised export names (``"daybook"``, ``"billspayable"``,
+        #: ``"stocksummary"``, ``"ledger"`` …) that raise instead of answering,
+        #: so a test can make exactly one scope of a pull fail.
+        self.fail_on = {name.replace(" ", "").lower() for name in (fail_on or ())}
         self.requests: list[str] = []
         self._voucher_seq = len(self.state.vouchers)
 
@@ -113,6 +122,8 @@ class FakeTallyTransport:
         name = (collection_type or request_id).strip()
         if name.startswith("Talai"):
             name = name[len("Talai") :]
+        if name.replace(" ", "").lower() in self.fail_on:
+            raise TallyUnreachable(f"Fake Tally is configured to fail on '{name}'")
         if name.replace(" ", "").lower() == "stocksummary":
             return _envelope(self._stock_summary(self._as_on(root)))
         min_alter_id = self._alter_id_floor(root)

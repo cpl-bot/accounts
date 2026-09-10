@@ -29,7 +29,9 @@ def pull_everything(client: TestClient) -> None:
               "from_date": "2026-05-01", "to_date": "2026-06-30"},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["status"] == "success"
+    items = response.json()["items"]
+    assert [i["scope"] for i in items] == ["masters", "vouchers", "bills"]
+    assert all(i["status"] == "success" for i in items)
 
 
 class TestTallyRoutes:
@@ -158,6 +160,51 @@ class TestDraftsLifecycle:
 
 
 class TestSyncRoutes:
+    def test_pull_returns_one_run_per_scope(self, client: TestClient) -> None:
+        body = client.post("/api/v1/sync/pull", json={"scopes": ["masters", "bills"]}).json()
+        assert [i["scope"] for i in body["items"]] == ["masters", "bills"]
+        assert all(i["kind"] == "pull" and i["status"] == "success" for i in body["items"])
+
+    def test_status_lists_every_scope_in_order(self, client: TestClient) -> None:
+        body = client.get("/api/v1/sync/status").json()
+        assert [s["scope"] for s in body["scopes"]] == [
+            "masters", "vouchers", "bills", "stock"
+        ]
+        # Nothing has run yet: every scope is unknown.
+        assert all(s["status"] is None for s in body["scopes"])
+        assert all(s["last_success_at"] is None for s in body["scopes"])
+
+    def test_status_after_a_successful_pull(self, client: TestClient) -> None:
+        pull_everything(client)
+        scopes = {s["scope"]: s for s in client.get("/api/v1/sync/status").json()["scopes"]}
+        for name in ("masters", "vouchers", "bills"):
+            assert scopes[name]["status"] == "success"
+            assert scopes[name]["last_run_at"] and scopes[name]["last_finished_at"]
+            assert scopes[name]["last_success_at"]
+            assert scopes[name]["error"] is None
+        # ``stock`` was not requested, so it has never run.
+        assert scopes["stock"]["status"] is None
+        assert scopes["stock"]["last_success_at"] is None
+
+    def test_status_after_a_failed_pull_keeps_the_last_success(
+        self, client: TestClient, fake_transport
+    ) -> None:
+        pull_everything(client)
+        fake_transport.fail_on = {"daybook"}
+        body = client.post(
+            "/api/v1/sync/pull", json={"scopes": ["masters", "vouchers"]}
+        ).json()
+        assert [(i["scope"], i["status"]) for i in body["items"]] == [
+            ("masters", "success"), ("vouchers", "failed")
+        ]
+        scopes = {s["scope"]: s for s in client.get("/api/v1/sync/status").json()["scopes"]}
+        assert scopes["vouchers"]["status"] == "failed"
+        assert scopes["vouchers"]["error"]
+        # The earlier success is still reported, so the UI can say how stale it is.
+        assert scopes["vouchers"]["last_success_at"]
+        assert scopes["masters"]["status"] == "success"
+        assert scopes["masters"]["error"] is None
+
     def test_runs_history(self, client: TestClient) -> None:
         pull_everything(client)
         runs = client.get("/api/v1/sync/runs?limit=5").json()["items"]

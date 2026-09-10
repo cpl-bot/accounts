@@ -3,16 +3,20 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from talai_middleware.db import repo
 from talai_middleware.db.base import Database
 from talai_middleware.services.scheduler import SyncScheduler
 from talai_middleware.tally.client import TallyClient
 from talai_middleware.tally.fake import FakeTallyTransport
 
 
-def make(settings, reachable: bool = True) -> SyncScheduler:
+def make(
+    settings, reachable: bool = True, fail_on: set[str] | None = None
+) -> SyncScheduler:
     database = Database(settings.database_url)
     database.create_all()
-    client = TallyClient(FakeTallyTransport(reachable=reachable), company="Acme Foods Pvt Ltd")
+    transport = FakeTallyTransport(reachable=reachable, fail_on=fail_on)
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd")
     return SyncScheduler(settings, database, client)
 
 
@@ -34,6 +38,23 @@ def test_a_successful_run_pulls_and_resets_the_breaker(settings) -> None:
     assert scheduler.run_once() is True
     assert scheduler.failures == 0
     assert scheduler.breaker_open is False
+
+
+def test_a_partial_failure_counts_as_a_failed_run(settings) -> None:
+    """One broken scope fails the whole attempt and feeds the breaker."""
+    scheduler = make(settings, fail_on={"Day Book"})
+    assert scheduler.run_once() is False
+    assert scheduler.failures == 1
+
+    session = scheduler.database.new_session()
+    try:
+        runs = {r.scope: r.status for r in repo.latest_sync_runs(session)}
+    finally:
+        session.close()
+    assert runs == {
+        "masters": "success", "vouchers": "failed",
+        "bills": "success", "stock": "success",
+    }
 
 
 def test_failures_open_the_breaker_and_back_off(settings) -> None:

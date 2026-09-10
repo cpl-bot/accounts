@@ -1,11 +1,15 @@
-"""Pull sync: TallyPrime → replica (plan §3.4).
+"""Pull sync: TallyPrime → replica (plan §3.4, docs/SYNC_RELIABILITY_PLAN.md).
 
-* masters are upserted by GUID (falling back to name) and, from the second run
-  on, fetched as a delta with ``$AlterID > <max seen>``;
+* masters are upserted by GUID (falling back to name) and are **always fetched
+  in full**: the old ``$AlterID > <max seen>`` delta could silently miss
+  closing-balance drift on ledgers Tally never marked as altered;
 * vouchers come from the Day Book for ``[last success − overlap_days, today]``
   and are **re-filtered by date in Python**, because TallyPrime is known to
   ignore ``SVFROMDATE``/``SVTODATE`` on that export;
 * bills are a snapshot: each run replaces the table for one direction.
+
+Every scope runs in its own transaction and records its own ``sync_runs`` row,
+so one unreachable scope neither rolls back nor blocks the others.
 """
 
 from __future__ import annotations
@@ -72,45 +76,107 @@ class SyncPuller:
         scopes: list[str] | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
+    ) -> list[models.SyncRun]:
+        """Pull each requested scope independently, one ``sync_runs`` row each.
+
+        Scopes are always attempted in :data:`SCOPES` order, whatever order the
+        caller listed them in, and the returned list follows that same order.
+        A scope that fails with a :class:`TallyError` is recorded as ``failed``
+        and the remaining scopes are still attempted.
+        """
+        requested = set(scopes) if scopes is not None else set(SCOPES)
+        selected = [s for s in SCOPES if s in requested]
+        return [self._run_scope(scope, from_date, to_date) for scope in selected]
+
+    def _run_scope(
+        self, scope: str, from_date: date | None, to_date: date | None
     ) -> models.SyncRun:
-        """Run the requested scopes, recording a ``sync_runs`` row either way."""
-        selected = [s for s in (scopes or list(SCOPES)) if s in SCOPES]
-        run = repo.start_sync_run(self.session, kind="pull", scope=",".join(selected))
+        """One scope: its own run row, its own transaction."""
+        run = repo.start_sync_run(self.session, kind="pull", scope=scope)
         self.session.commit()
-        seen = changed = 0
+        run_id = run.id
+        self._audit_checkpoint()
+        self._last_seen = 0
         try:
-            if "masters" in selected:
-                changed += self.pull_masters()
-                seen += self._last_seen
-            if "vouchers" in selected:
-                window_from, window_to = self.voucher_window(from_date, to_date)
-                changed += self.pull_vouchers(window_from, window_to)
-                seen += self._last_seen
-            if "bills" in selected:
-                changed += self.pull_bills()
-                seen += self._last_seen
-            if "stock" in selected:
-                changed += self.pull_stock_valuations()
-                seen += self._last_seen
+            changed = self._pull_scope(scope, from_date, to_date)
         except TallyError as exc:
-            logger.warning("pull failed: %s", exc)
-            repo.finish_sync_run(self.session, run, status="failed", error=str(exc))
-            self.session.commit()
-            return run
+            logger.warning("pull of %s failed: %s", scope, exc)
+            return self._fail_scope(run_id, exc)
+        except Exception as exc:  # noqa: BLE001 - re-raised below
+            # Never leave a zombie ``running`` row behind on an unexpected error.
+            logger.exception("pull of %s raised", scope)
+            self._fail_scope(run_id, exc)
+            raise
         repo.finish_sync_run(
-            self.session, run, status="success", records_seen=seen, records_changed=changed
+            self.session,
+            run,
+            status="success",
+            records_seen=self._last_seen,
+            records_changed=changed,
         )
         self.session.commit()
+        self._audit_checkpoint()
         return run
+
+    def _pull_scope(self, scope: str, from_date: date | None, to_date: date | None) -> int:
+        if scope == "masters":
+            return self.pull_masters()
+        if scope == "vouchers":
+            window_from, window_to = self.voucher_window(from_date, to_date)
+            return self.pull_vouchers(window_from, window_to)
+        if scope == "bills":
+            return self.pull_bills()
+        return self.pull_stock_valuations()
+
+    def _fail_scope(self, run_id: int, exc: BaseException) -> models.SyncRun:
+        """Discard this scope's partial upserts and mark its run failed.
+
+        ``rollback()`` throws away everything written since the run row was
+        committed — including the ``audit_log`` rows this scope's Tally calls
+        produced, which is why the sink's buffer is replayed straight after.
+        The run row itself was committed by :meth:`_run_scope` before the pull
+        started, so it survives; it is re-fetched because ``rollback()``
+        expires every ORM object bound to the session.
+        """
+        self.session.rollback()
+        self._audit_replay()
+        run = self.session.get(models.SyncRun, run_id)
+        repo.finish_sync_run(self.session, run, status="failed", error=str(exc) or repr(exc))
+        self.session.commit()
+        self._audit_checkpoint()
+        return run
+
+    # -- audit sink co-operation -------------------------------------------
+    #
+    # The sink writes ``audit_log`` rows into *this* session (SQLite is a
+    # single-writer database, so it must not open a second connection). It
+    # buffers what it wrote so a scope-level rollback does not lose the record
+    # of the very Tally call that failed.
+
+    def _audit_checkpoint(self) -> None:
+        """Tell the sink its buffered rows are now committed."""
+        checkpoint = getattr(getattr(self.client, "audit", None), "checkpoint", None)
+        if callable(checkpoint):
+            checkpoint()
+
+    def _audit_replay(self) -> None:
+        """Re-write the audit rows a rollback just threw away."""
+        replay = getattr(getattr(self.client, "audit", None), "replay", None)
+        if callable(replay):
+            replay()
 
     _last_seen: int = 0
 
     # -- masters -----------------------------------------------------------
 
     def pull_masters(self) -> int:
-        """Upsert groups, ledgers, stock items and the simple lookups."""
+        """Upsert groups, ledgers, stock items and the simple lookups.
+
+        Always a full refresh: ``None`` is passed as the ALTERID floor so Tally
+        returns every master, not just the ones it considers altered.
+        """
         seen = changed = 0
-        for row in self.client.groups(self._since(models.Group)):
+        for row in self.client.groups(None):
             repo.upsert_group(
                 self.session,
                 name=row.name,
@@ -123,7 +189,7 @@ class SyncPuller:
             )
             seen += 1
             changed += 1
-        for row in self.client.ledgers(self._since(models.Ledger)):
+        for row in self.client.ledgers(None):
             repo.upsert_ledger(
                 self.session,
                 name=row.name,
@@ -142,7 +208,7 @@ class SyncPuller:
             )
             seen += 1
             changed += 1
-        for row in self.client.stock_items(self._since(models.StockItem)):
+        for row in self.client.stock_items(None):
             repo.upsert_stock_item(
                 self.session,
                 name=row.name,
@@ -161,7 +227,7 @@ class SyncPuller:
             (models.Godown, self.client.godowns),
             (models.VoucherType, self.client.voucher_types),
         ):
-            for row in fetch(self._since(model)):
+            for row in fetch(None):
                 repo.upsert_lookup(
                     self.session, model, name=row.name, parent=row.parent,
                     **self._sync_columns(row),
@@ -170,10 +236,6 @@ class SyncPuller:
                 changed += 1
         self._last_seen = seen
         return changed
-
-    def _since(self, model: type) -> int | None:
-        """Delta floor for a collection: the highest ALTERID already stored."""
-        return repo.max_alter_id(self.session, model)
 
     def _sync_columns(self, row) -> dict:
         return {

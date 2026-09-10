@@ -143,3 +143,60 @@ remains system of record per `docs/DECISIONS.md` A1.
 - Full master refresh assumes ledger/group/stock-item counts stay small
   enough that a full pull every interval is cheap; revisit if that stops
   being true for a very large chart of accounts.
+
+## 6. Implementation status
+
+Middleware (Python/FastAPI):
+
+- **Phase 1 — per-scope runs + full master refresh**
+  (`middleware/talai_middleware/services/sync_pull.py`): `SyncPuller.run()`
+  returns `list[SyncRun]`, attempting scopes in `SCOPES` order whatever order
+  the caller asked for. Each scope gets its own committed `sync_runs` row via
+  `_run_scope()`; a `TallyError` rolls back only that scope's upserts
+  (`_fail_scope()`, which re-fetches the expired run row) and the loop
+  continues. An unexpected (non-`TallyError`) exception marks that scope's row
+  `failed` and re-raises, so no `running` row is ever left behind.
+  `records_seen`/`records_changed` are now per scope. `pull_masters()` passes
+  `None` as the ALTERID floor everywhere, and `_since()` is gone;
+  `repo.max_alter_id()` is kept only because
+  `tests/unit/test_db_models.py::test_max_alter_id_helper` still covers it.
+- **Phase 2 — callers**: `api/sync.py` `POST /sync/pull` now
+  `response_model=SyncRunList`; `services/scheduler.py` `run_once()` succeeds
+  only when every scope succeeded and logs the failing scope names;
+  `scripts/validate_db_sync.py` prints one line per scope run.
+- **Phase 3 — status endpoint**: `GET /api/v1/sync/status` →
+  `SyncStatusOut`/`SyncScopeStatus` (`middleware/talai_middleware/api/schemas.py`),
+  built on the new `repo.latest_pull_run_per_scope()` plus
+  `repo.last_successful_pull()`. Always four entries in `SCOPES` order.
+  `docs/openapi.json` regenerated with `scripts/export_openapi.py`.
+- **Phase 5 — tests** (`middleware/tests`): masters full-refresh, one run row
+  per scope, every requested scope failing when Tally is unreachable, a single
+  failing scope not rolling back or blocking the others, the audit row of a
+  failed scope surviving, the `RuntimeError` zombie-row case, the incremental
+  voucher window, a partial failure counting as a failed `run_once`, and
+  route-level `/sync/pull` + `/sync/status` coverage.
+- **Audit-sink decision**: audit rows are made to survive. `SessionAuditSink`
+  (`middleware/talai_middleware/db/audit_sink.py`) buffers the entries it has
+  written but not yet seen committed and exposes `replay()` / `checkpoint()`;
+  `SyncPuller` replays the buffer immediately after a scope rollback and
+  checkpoints after every commit. No second connection is opened, so the
+  SQLite single-writer constraint in the sink's docstring still holds.
+- **Phase 4 (frontend)**: `components/layout/sync-status-panel.tsx` is rendered
+  in `PageHeader` next to the Tally pill. It has a "Sync now" button
+  (`pullSync()` in `lib/api/hooks.ts` → `POST /sync/pull`), a summary derived
+  from `/sync/status` ("Last synced …", "Partial sync — N of 4 failed",
+  "Never synced"), an expandable per-scope list (status, last success, last
+  error), and an inline callout for any scope the pull just reported as
+  failed. `pullSync()` dispatches a `talai:sync-completed` window event that
+  every mounted `useResource` hook listens for, so the dashboard, bills and
+  drafts refetch after a manual sync without a reload. Zod schemas
+  (`syncRunListSchema`, `syncScopeStatusSchema`, `syncStatusSchema`,
+  `pullRequestSchema`) are covered by the OpenAPI contract test; demo mode
+  (`app/api/talai/[...path]/route.ts`) and the MSW handlers serve the same
+  fixtures (`demoSyncRunList`, `demoSyncStatus`). RTL tests:
+  `tests/components/sync-status-panel.test.tsx`.
+- **Not done (out of plan scope, noted for follow-up)**: masters removed in
+  Tally are still not soft-deleted in the replica. With masters now fully
+  refreshed every run this is straightforward to add (mark rows absent from
+  the pulled set `is_deleted=True`), but it is a behaviour change beyond this
+  plan.

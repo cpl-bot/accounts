@@ -23,6 +23,8 @@ import {
   demoDrafts,
   demoPushResult,
   demoSettings,
+  demoSyncRunList,
+  demoSyncStatus,
   demoTallyStatus,
 } from '@/lib/api/demo-fixtures'
 import {
@@ -44,10 +46,14 @@ import {
   ledgerSchema,
   listLedgersSchema,
   ocrResultSchema,
+  pullRequestSchema,
   pushResultItemSchema,
   pushResultSchema,
   settingsSchema,
+  syncRunListSchema,
   syncRunSchema,
+  syncScopeStatusSchema,
+  syncStatusSchema,
   tallyCompaniesSchema,
   tallyStatusSchema,
   validationIssueSchema,
@@ -110,6 +116,9 @@ describe('response contract: openapi component -> zod schema', () => {
     ['DraftList', z.object({ items: z.array(draftSchema), total: z.number() })],
     ['ValidationIssue', validationIssueSchema],
     ['SyncRunOut', syncRunSchema],
+    ['SyncRunList', syncRunListSchema],
+    ['SyncScopeStatus', syncScopeStatusSchema],
+    ['SyncStatusOut', syncStatusSchema],
     ['PushResultItem', pushResultItemSchema],
     ['PushResponse', pushResultSchema],
     ['AttachmentOut', attachmentSchema],
@@ -155,6 +164,7 @@ describe('request contract: zod request schema -> openapi component', () => {
     { zodName: 'draftItemSchema', zodSchema: draftItemSchema, componentName: 'ItemPayload-Input' },
     { zodName: 'draftLedgerLineSchema', zodSchema: draftLedgerLineSchema, componentName: 'LedgerLinePayload-Input' },
     { zodName: 'draftTotalsSchema', zodSchema: draftTotalsSchema, componentName: 'TotalsPayload-Input' },
+    { zodName: 'pullRequestSchema', zodSchema: pullRequestSchema, componentName: 'PullRequest' },
   ]
 
   it.each(cases)(
@@ -220,5 +230,17 @@ describe('demo fixtures satisfy the same zod schemas as the real middleware', ()
     const overview = demoDashboardOverview()
     const result = dashboardOverviewSchema.safeParse(overview)
     expect(result.success, describeIssues(result, overview)).toBe(true)
+  })
+
+  it('demoSyncRunList -> syncRunListSchema', () => {
+    const runs = demoSyncRunList()
+    const result = syncRunListSchema.safeParse(runs)
+    expect(result.success, describeIssues(result, runs)).toBe(true)
+  })
+
+  it('demoSyncStatus -> syncStatusSchema', () => {
+    const status = demoSyncStatus()
+    const result = syncStatusSchema.safeParse(status)
+    expect(result.success, describeIssues(result, status)).toBe(true)
   })
 })

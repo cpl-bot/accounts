@@ -15,8 +15,11 @@ import {
   demoLedgers,
   demoPushResult,
   demoSettings,
+  demoSyncRunList,
+  demoSyncStatus,
   demoTallyStatus,
 } from '@/lib/api/demo-fixtures'
+import type { SyncScope } from '@/lib/api/schema'
 
 const API = '/api/talai'
 
@@ -49,6 +52,11 @@ export const handlers = [
     const body = (await request.json().catch(() => ({}))) as { draft_ids?: string[] | null }
     return HttpResponse.json(demoPushResult(body.draft_ids ?? ['draft-1']))
   }),
+  http.post(`${API}/sync/pull`, async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { scopes?: SyncScope[] }
+    return HttpResponse.json(demoSyncRunList(body.scopes))
+  }),
+  http.get(`${API}/sync/status`, () => HttpResponse.json(demoSyncStatus())),
   http.post(`${API}/attachments`, () => HttpResponse.json(demoAttachments()[0] ?? null)),
   http.get(`${API}/attachments`, () => HttpResponse.json({ items: demoAttachments(), total: demoAttachments().length })),
   http.get(`${API}/attachments/:id`, ({ params }) => {

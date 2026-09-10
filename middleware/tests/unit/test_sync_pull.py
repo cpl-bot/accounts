@@ -58,12 +58,14 @@ def test_pull_masters_is_idempotent(puller) -> None:
     assert len(repo.list_ledgers(puller.session)) == before
 
 
-def test_second_pull_uses_the_alter_id_delta(puller, transport) -> None:
+def test_masters_always_do_a_full_refresh(puller, transport) -> None:
+    """No ALTERID delta any more: a second pull asks for the whole list."""
     puller.pull_masters()
     puller.session.commit()
     transport.requests.clear()
     puller.pull_masters()
-    assert any("$AlterID &gt;" in r or "$AlterID >" in r for r in transport.requests)
+    assert transport.requests
+    assert not any("$AlterID &gt;" in r or "$AlterID >" in r for r in transport.requests)
 
 
 def test_pull_vouchers_filters_by_date_client_side(puller) -> None:
@@ -108,25 +110,115 @@ def test_pull_bills_replaces_the_table(puller) -> None:
     assert repo.sum_pending_bills(puller.session, "payable") > 0
 
 
-def test_pull_records_a_sync_run(db, transport, settings) -> None:
+def test_pull_records_one_sync_run_per_scope(db, transport, settings) -> None:
     session = db.new_session()
     client = TallyClient(transport, company="Acme Foods Pvt Ltd")
-    run = SyncPuller(session, client, settings).run(["masters", "bills"])
+    runs = SyncPuller(session, client, settings).run(["masters", "bills"])
     session.commit()
-    assert run.status == "success"
-    assert run.scope == "masters,bills"
-    assert run.records_seen > 0
-    assert repo.latest_sync_runs(session)[0].id == run.id
+    assert [r.scope for r in runs] == ["masters", "bills"]
+    assert [r.status for r in runs] == ["success", "success"]
+    assert all(r.records_seen > 0 for r in runs)
+    assert {r.id for r in repo.latest_sync_runs(session)} >= {r.id for r in runs}
     session.close()
 
 
-def test_pull_marks_the_run_failed_when_tally_is_unreachable(db, settings) -> None:
+def test_run_uses_scopes_order_whatever_order_was_asked_for(db, transport, settings) -> None:
+    session = db.new_session()
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd")
+    runs = SyncPuller(session, client, settings).run(["bills", "masters"])
+    assert [r.scope for r in runs] == ["masters", "bills"]
+    session.close()
+
+
+def test_pull_marks_every_requested_scope_failed_when_tally_is_unreachable(
+    db, settings
+) -> None:
     session = db.new_session()
     client = TallyClient(FakeTallyTransport(reachable=False))
-    run = SyncPuller(session, client, settings).run(["masters"])
+    runs = SyncPuller(session, client, settings).run(["masters", "bills"])
     session.commit()
-    assert run.status == "failed"
-    assert run.error
+    assert [r.scope for r in runs] == ["masters", "bills"]
+    assert all(r.status == "failed" and r.error for r in runs)
+    rows = repo.latest_sync_runs(session)
+    assert [r.status for r in rows] == ["failed", "failed"]
+    session.close()
+
+
+def test_a_failing_scope_does_not_roll_back_or_block_the_others(db, settings) -> None:
+    """masters commit, the failing scope keeps nothing, later scopes still run."""
+    transport = FakeTallyTransport(fail_on={"Day Book"})
+    session = db.new_session()
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd")
+    runs = SyncPuller(session, client, settings).run(["masters", "vouchers", "bills"])
+
+    assert [(r.scope, r.status) for r in runs] == [
+        ("masters", "success"), ("vouchers", "failed"), ("bills", "success")
+    ]
+    # masters survived the vouchers rollback...
+    assert len(repo.list_ledgers(session)) == 15
+    # ...the failing scope stored nothing...
+    assert repo.list_vouchers(session) == []
+    # ...and the scope after it still ran.
+    assert repo.sum_pending_bills(session, "payable") > 0
+
+    failed = [r for r in repo.latest_sync_runs(session) if r.status == "failed"]
+    assert [r.scope for r in failed] == ["vouchers"]
+    assert failed[0].error
+    session.close()
+
+
+def test_a_failing_scope_keeps_its_audit_row(db, settings) -> None:
+    """The rollback must not erase the audit row of the call that failed."""
+    from talai_middleware.db.audit_sink import SessionAuditSink
+
+    transport = FakeTallyTransport(fail_on={"Day Book"})
+    session = db.new_session()
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd").with_audit(
+        SessionAuditSink(session)
+    )
+    SyncPuller(session, client, settings).run(["vouchers"])
+    rows = list(session.scalars(select(models.AuditLog)))
+    assert [r.operation for r in rows] == ["report:Day Book"]
+    assert rows[0].status == "error"
+    session.close()
+
+
+def test_an_unexpected_error_leaves_no_running_row(db, settings) -> None:
+    class Boom(TallyClient):
+        def bills(self, direction: str):
+            raise RuntimeError("kaboom")
+
+    session = db.new_session()
+    client = Boom(FakeTallyTransport(), company="Acme Foods Pvt Ltd")
+    with pytest.raises(RuntimeError):
+        SyncPuller(session, client, settings).run(["masters", "bills"])
+    rows = {r.scope: r for r in repo.latest_sync_runs(session)}
+    assert rows["masters"].status == "success"
+    assert rows["bills"].status == "failed"
+    assert "kaboom" in rows["bills"].error
+    assert not [r for r in rows.values() if r.status == "running"]
+    session.close()
+
+
+def test_the_second_voucher_pull_uses_an_incremental_window(
+    db, transport, settings
+) -> None:
+    session = db.new_session()
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd")
+    puller = SyncPuller(session, client, settings)
+
+    first = puller.run(["vouchers"])[0]
+    assert first.status == "success"
+    started = first.started_at.date()
+
+    expected_start = started - timedelta(days=settings.sync_overlap_days)
+    assert puller.voucher_window()[0] == expected_start
+
+    transport.requests.clear()
+    puller.run(["vouchers"])
+    day_book = [r for r in transport.requests if "Day Book" in r]
+    assert day_book
+    assert f"<SVFROMDATE>{expected_start:%Y%m%d}</SVFROMDATE>" in day_book[-1]
     session.close()
 
 
@@ -185,14 +277,15 @@ class TestStockValuations:
         from talai_middleware.services.sync_pull import SCOPES
 
         assert "stock" in SCOPES
-        run = puller.run()
-        assert run.status == "success"
-        assert "stock" in run.scope
+        runs = puller.run()
+        assert [r.scope for r in runs] == list(SCOPES)
+        assert all(r.status == "success" for r in runs)
         assert puller.session.scalar(select(func.count()).select_from(m.StockValuation)) > 0
 
     def test_stock_can_be_pulled_on_its_own(self, puller) -> None:
         from talai_middleware.db import models as m
 
-        run = puller.run(["stock"])
-        assert run.scope == "stock"
+        runs = puller.run(["stock"])
+        assert [r.scope for r in runs] == ["stock"]
+        assert runs[0].status == "success"
         assert puller.session.scalar(select(func.count()).select_from(m.StockValuation)) > 0

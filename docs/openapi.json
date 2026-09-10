@@ -1278,6 +1278,7 @@
           "sync"
         ],
         "summary": "Pull from Tally now",
+        "description": "One run row per scope, in the order the scopes were attempted.",
         "operationId": "pull_api_v1_sync_pull_post",
         "requestBody": {
           "content": {
@@ -1295,7 +1296,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SyncRunOut"
+                  "$ref": "#/components/schemas/SyncRunList"
                 }
               }
             }
@@ -1347,6 +1348,28 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/sync/status": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "summary": "Per-scope pull status",
+        "description": "Where each pull scope stands: latest run, latest success, latest error.",
+        "operationId": "status_api_v1_sync_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncStatusOut"
                 }
               }
             }
@@ -3973,6 +3996,106 @@
           "records_changed"
         ],
         "title": "SyncRunOut"
+      },
+      "SyncScopeStatus": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "masters",
+              "vouchers",
+              "bills",
+              "stock"
+            ],
+            "title": "Scope"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "running",
+                  "success",
+                  "failed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "last_finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Finished At"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "SyncScopeStatus",
+        "description": "Where one pull scope stands, from the ``sync_runs`` history."
+      },
+      "SyncStatusOut": {
+        "properties": {
+          "scopes": {
+            "items": {
+              "$ref": "#/components/schemas/SyncScopeStatus"
+            },
+            "type": "array",
+            "title": "Scopes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scopes"
+        ],
+        "title": "SyncStatusOut",
+        "description": "One entry per scope, always in ``sync_pull.SCOPES`` order."
       },
       "TallyStatus": {
         "properties": {
