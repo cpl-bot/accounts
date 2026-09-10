@@ -10,3 +10,5 @@ doc: docs/LAN_DEPLOYMENT.md
 # T-L02: LAN validation — validate_db_sync.py full pull, reconcile ledger counts
 
 Unblock: run `scripts/validate_db_sync.py` against office Tally, confirm ledger counts reconcile. Depends on T-B13 (drafts outbox API — already done per TASKS.md). Cannot be delegated to an agent.
+
+Output - checked and confirmed.
