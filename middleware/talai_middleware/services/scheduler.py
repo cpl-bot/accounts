@@ -55,19 +55,26 @@ class SyncScheduler:
         return min(base * (2**self.failures), cap)
 
     def run_once(self) -> bool:
-        """One pull of every scope. Returns True when it succeeded."""
+        """One pull of every scope. True only when every scope succeeded."""
         session = self.database.new_session()
         try:
             client = self.client.with_audit(SessionAuditSink(session))
-            run = SyncPuller(session, client, self.settings).run()
-            success = run.status == "success"
+            runs = SyncPuller(session, client, self.settings).run()
+            # One row per scope now: the whole attempt only counts as a success
+            # when every scope succeeded (a partial sync is a failed run).
+            failed = [r.scope for r in runs if r.status != "success"]
+            success = not failed
         finally:
             session.close()
         if success:
             self.failures = 0
         else:
             self.failures += 1
-            logger.warning("scheduled pull failed (%d consecutive)", self.failures)
+            logger.warning(
+                "scheduled pull failed for %s (%d consecutive)",
+                ", ".join(failed) or "no scopes",
+                self.failures,
+            )
         return success
 
     async def start(self) -> None:

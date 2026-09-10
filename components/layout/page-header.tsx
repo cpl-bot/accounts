@@ -1,5 +1,6 @@
 import { PanelLeft } from 'lucide-react'
 import { TallyStatusPill } from '@/components/layout/tally-status-pill'
+import { SyncStatusPanel } from '@/components/layout/sync-status-panel'
 
 export function PageHeader({
   title,
@@ -16,6 +17,7 @@ export function PageHeader({
       </div>
       <div className="flex items-center gap-3">
         <TallyStatusPill />
+        <SyncStatusPanel />
         {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
       </div>
     </header>

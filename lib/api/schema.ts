@@ -352,6 +352,42 @@ export const syncRunSchema = z.object({
 })
 export type SyncRun = z.infer<typeof syncRunSchema>
 
+// Mirrors `SyncRunList` — the `/sync/pull` response: one `SyncRun` per
+// attempted scope, in order.
+export const syncRunListSchema = z.object({
+  items: z.array(syncRunSchema),
+})
+export type SyncRunList = z.infer<typeof syncRunListSchema>
+
+// Mirrors the `PullRequest` request body for `POST /sync/pull`.
+export const syncScopeSchema = z.enum(['masters', 'vouchers', 'bills', 'stock'])
+export type SyncScope = z.infer<typeof syncScopeSchema>
+
+export const pullRequestSchema = z.object({
+  scopes: z.array(syncScopeSchema).optional(),
+  from_date: z.string().optional(),
+  to_date: z.string().optional(),
+})
+export type PullRequest = z.infer<typeof pullRequestSchema>
+
+// Mirrors `SyncScopeStatus` — the per-scope entry in `GET /sync/status`.
+export const syncScopeStatusSchema = z.object({
+  scope: syncScopeSchema,
+  status: z.enum(['running', 'success', 'failed']).nullable().optional(),
+  last_run_at: z.string().nullable().optional(),
+  last_finished_at: z.string().nullable().optional(),
+  last_success_at: z.string().nullable().optional(),
+  error: z.string().nullable().optional(),
+})
+export type SyncScopeStatus = z.infer<typeof syncScopeStatusSchema>
+
+// Mirrors `SyncStatusOut` — always 4 entries in the order masters, vouchers,
+// bills, stock.
+export const syncStatusSchema = z.object({
+  scopes: z.array(syncScopeStatusSchema),
+})
+export type SyncStatus = z.infer<typeof syncStatusSchema>
+
 // Mirrors `PushResultItem`. With TALLY_WRITE_ENABLED off (the default) every
 // item comes back `status: "validated", dry_run: true`.
 export const pushResultItemSchema = z.object({

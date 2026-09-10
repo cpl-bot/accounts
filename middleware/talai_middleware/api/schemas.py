@@ -115,6 +115,7 @@ LedgerSource = Literal["tally", "talai"]
 BillDirection = Literal["payable", "receivable"]
 SyncKind = Literal["pull", "push"]
 SyncStatus = Literal["running", "success", "failed"]
+SyncScope = Literal["masters", "vouchers", "bills", "stock"]
 
 
 class LedgerOut(ORMModel):
@@ -444,8 +445,25 @@ class SyncRunList(BaseModel):
     items: list[SyncRunOut]
 
 
+class SyncScopeStatus(BaseModel):
+    """Where one pull scope stands, from the ``sync_runs`` history."""
+
+    scope: SyncScope
+    status: SyncStatus | None = None
+    last_run_at: datetime | None = None
+    last_finished_at: datetime | None = None
+    last_success_at: datetime | None = None
+    error: str | None = None
+
+
+class SyncStatusOut(BaseModel):
+    """One entry per scope, always in ``sync_pull.SCOPES`` order."""
+
+    scopes: list[SyncScopeStatus]
+
+
 class PullRequest(BaseModel):
-    scopes: list[Literal["masters", "vouchers", "bills", "stock"]] = Field(
+    scopes: list[SyncScope] = Field(
         default_factory=lambda: ["masters", "vouchers", "bills", "stock"]
     )
     from_date: date | None = None

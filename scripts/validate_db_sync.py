@@ -108,12 +108,16 @@ def main(argv: list[str] | None = None) -> int:
             f"\n== pulling {', '.join(scopes)} from "
             f"{'the fake Tally' if args.fake else settings.tally_url}"
         )
-        run = SyncPuller(session, client, settings).run(scopes)
+        runs = SyncPuller(session, client, settings).run(scopes)
         session.commit()
-        print(f"   status={run.status} seen={run.records_seen} changed={run.records_changed}")
-        if run.error:
-            print(f"   error: {run.error}")
-            problems.append("the pull run failed")
+        for run in runs:
+            print(
+                f"   {run.scope:10} status={run.status} "
+                f"seen={run.records_seen} changed={run.records_changed}"
+            )
+            if run.error:
+                print(f"   error: {run.error}")
+                problems.append(f"the {run.scope} pull run failed")
 
         print("\n== row counts")
         counts = repo.table_counts(session)

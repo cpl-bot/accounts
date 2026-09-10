@@ -27,6 +27,9 @@ import type {
   PushResult,
   Settings,
   SyncRun,
+  SyncRunList,
+  SyncScope,
+  SyncStatus,
   TallyStatus,
 } from './schema'
 
@@ -305,6 +308,42 @@ export function demoPushResult(draftIds: string[] = []): PushResult {
       dry_run: true,
       errors: [],
     })),
+  }
+}
+
+const ALL_SYNC_SCOPES: SyncScope[] = ['masters', 'vouchers', 'bills', 'stock']
+
+// Mirrors `SyncRunList` — one successful `SyncRun` per requested scope
+// (every scope, in order, when none are requested), as `POST /sync/pull`
+// returns on a clean run.
+export function demoSyncRunList(scopes?: SyncScope[]): SyncRunList {
+  const selected = scopes && scopes.length > 0 ? scopes : ALL_SYNC_SCOPES
+  return {
+    items: selected.map((scope, i) => ({
+      ...demoSyncRun(),
+      id: Math.floor(Date.now() / 1000) + i,
+      kind: 'pull',
+      scope,
+    })),
+  }
+}
+
+// Mirrors `SyncStatusOut` — always 4 entries, in the fixed order masters,
+// vouchers, bills, stock, all reporting a recent successful pull.
+export function demoSyncStatus(): SyncStatus {
+  const now = new Date()
+  return {
+    scopes: ALL_SYNC_SCOPES.map((scope, i) => {
+      const finishedAt = new Date(now.getTime() - i * 60_000).toISOString()
+      return {
+        scope,
+        status: 'success',
+        last_run_at: finishedAt,
+        last_finished_at: finishedAt,
+        last_success_at: finishedAt,
+        error: null,
+      }
+    }),
   }
 }
 

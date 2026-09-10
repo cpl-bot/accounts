@@ -103,6 +103,23 @@ def last_successful_pull(session: Session, scope: str) -> models.SyncRun | None:
     return session.scalars(stmt).first()
 
 
+def latest_pull_run_per_scope(session: Session) -> dict[str, models.SyncRun]:
+    """The most recent ``kind="pull"`` run for each literal scope name.
+
+    Since each scope records its own row (docs/SYNC_RELIABILITY_PLAN.md §4), the
+    ``scope`` column is a single scope name and grouping on it is meaningful.
+    """
+    newest = (
+        select(func.max(models.SyncRun.id))
+        .where(models.SyncRun.kind == "pull")
+        .group_by(models.SyncRun.scope)
+    )
+    stmt = select(models.SyncRun).where(models.SyncRun.id.in_(newest))
+    return {run.scope: run for run in session.scalars(stmt)}
+
+
+#: Only used by tests now that masters always do a full refresh; kept as the
+#: single place that knows how to read a collection's ALTERID high-water mark.
 def max_alter_id(session: Session, model: type) -> int | None:
     return session.scalar(select(func.max(model.tally_alter_id)))
 

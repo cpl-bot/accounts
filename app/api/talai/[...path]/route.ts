@@ -11,8 +11,11 @@ import {
   demoLedgers,
   demoPushResult,
   demoSettings,
+  demoSyncRunList,
+  demoSyncStatus,
   demoTallyStatus,
 } from '@/lib/api/demo-fixtures'
+import type { SyncScope } from '@/lib/api/schema'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,7 +27,12 @@ function errorResponse(status: number, code: string, message: string) {
   return NextResponse.json({ error: { code, message } }, { status })
 }
 
-function demoResponse(path: string, method: string, searchParams?: URLSearchParams): NextResponse | null {
+async function demoResponse(
+  path: string,
+  method: string,
+  searchParams?: URLSearchParams,
+  req?: NextRequest,
+): Promise<NextResponse | null> {
   const segments = path.split('/').filter(Boolean)
 
   if (method === 'GET' && path === 'tally/status') return NextResponse.json(demoTallyStatus())
@@ -56,6 +64,13 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
   }
   if (method === 'POST' && path === 'sync/push') {
     return NextResponse.json(demoPushResult())
+  }
+  if (method === 'POST' && path === 'sync/pull') {
+    const body = req ? ((await req.clone().json().catch(() => ({}))) as { scopes?: SyncScope[] }) : {}
+    return NextResponse.json(demoSyncRunList(body.scopes))
+  }
+  if (method === 'GET' && path === 'sync/status') {
+    return NextResponse.json(demoSyncStatus())
   }
   if (method === 'POST' && path === 'attachments') {
     const list = demoAttachments()
@@ -101,7 +116,7 @@ function demoResponse(path: string, method: string, searchParams?: URLSearchPara
 
 async function forward(req: NextRequest, path: string) {
   if (isDemoMode()) {
-    const demo = demoResponse(path, req.method, req.nextUrl.searchParams)
+    const demo = await demoResponse(path, req.method, req.nextUrl.searchParams, req)
     if (demo) return demo
     // Fall through to a generic "not implemented in demo mode" 200 for
     // anything not explicitly modelled above, so the UI can still render.
