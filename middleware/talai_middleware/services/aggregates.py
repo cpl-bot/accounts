@@ -298,13 +298,17 @@ def overview(
     )
 
 
-def aging_buckets(session: Session, direction: str, as_on: date) -> list[AgingBucket]:
+def aging_buckets(
+    session: Session, direction: str, as_on: date, party: str | None = None
+) -> list[AgingBucket]:
     """Split open bills into Current / 1-30 / 31-60 / 61-90 / 90+ by due date."""
     totals: dict[str, Decimal] = {label: ZERO for label, _ in AGING_BUCKETS}
     counts: dict[str, int] = {label: 0 for label, _ in AGING_BUCKETS}
     stmt = select(models.Bill).where(
         models.Bill.direction == direction, models.Bill.pending_amount != 0
     )
+    if party:
+        stmt = stmt.where(models.Bill.party_ledger.ilike(f"%{party}%"))
     for bill in session.scalars(stmt):
         overdue_days = (as_on - bill.due_date).days if bill.due_date else 0
         label = _bucket_for(overdue_days)

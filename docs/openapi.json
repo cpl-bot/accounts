@@ -709,6 +709,22 @@
               ],
               "title": "As On"
             }
+          },
+          {
+            "name": "party",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Party"
+            }
           }
         ],
         "responses": {
@@ -718,6 +734,67 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/BillList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bills/by-party": {
+      "get": {
+        "tags": [
+          "vouchers"
+        ],
+        "summary": "Open bills ranked by party outstanding",
+        "operationId": "bills_by_party_api_v1_bills_by_party_get",
+        "parameters": [
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(payable|receivable)$",
+              "default": "payable",
+              "title": "Direction"
+            }
+          },
+          {
+            "name": "as_on",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As On"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartyBillRankingList"
                 }
               }
             }
@@ -3524,6 +3601,46 @@
         "type": "object",
         "title": "OcrResult",
         "description": "One reading of one document."
+      },
+      "PartyBillRanking": {
+        "properties": {
+          "party_ledger": {
+            "type": "string",
+            "title": "Party Ledger"
+          },
+          "total_pending": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Pending"
+          },
+          "open_bill_count": {
+            "type": "integer",
+            "title": "Open Bill Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "party_ledger",
+          "total_pending",
+          "open_bill_count"
+        ],
+        "title": "PartyBillRanking"
+      },
+      "PartyBillRankingList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PartyBillRanking"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "PartyBillRankingList"
       },
       "PartyPayload": {
         "properties": {

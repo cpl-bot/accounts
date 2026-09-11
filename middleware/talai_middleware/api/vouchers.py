@@ -64,7 +64,7 @@ def bills(
     rows = repo.list_bills(session, direction=direction, as_on=as_on, party=party)
     return BillList(
         items=[BillOut.model_validate(r) for r in rows],
-        buckets=aggregates.aging_buckets(session, direction, as_on),
+        buckets=aggregates.aging_buckets(session, direction, as_on, party=party),
         total_pending=repo.sum_pending_bills(
             session, direction, as_on=as_on, party=party
         ),

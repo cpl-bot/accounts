@@ -95,6 +95,12 @@ class TestVouchersAndBills:
         assert {bill["party_ledger"] for bill in filtered["items"]} == {
             "BioShield Medical & Co"
         }
+        assert sum(float(bucket["amount"]) for bucket in filtered["buckets"]) == float(
+            filtered["total_pending"]
+        )
+        assert sum(bucket["count"] for bucket in filtered["buckets"]) == len(
+            filtered["items"]
+        )
         assert client.get("/api/v1/bills?party=does-not-exist").json()["items"] == []
 
         ranking = client.get("/api/v1/bills/by-party?direction=payable").json()
