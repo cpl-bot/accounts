@@ -1,6 +1,5 @@
 ---
 id: empry-dashboard-with-no-real-values
-owner: "@orchestrator"
 type: bug
 created: 2026-09-10
 size: M
@@ -26,5 +25,7 @@ Do not own: Tally request builders and parsers owned by the prerequisite cards, 
 Out of scope: changing dashboard formulas, inventing replacement figures, making SQLite the system of record, or enabling Tally writes.
 
 Depends on: `dev-bounded-voucher-collection`, `dev-bill-data-snapshots`.
+
+**Nextjs App** is running and accessible on localhost:3000
 
 ![shot](docs/board-assets/20260910-183014-65d5.png)
