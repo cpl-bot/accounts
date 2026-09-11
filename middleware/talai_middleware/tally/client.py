@@ -235,11 +235,12 @@ class TallyClient:
             xml, f"report:{report_name}", lambda r: P.parse_bills(r, direction=direction)
         )
 
-    def find_voucher_by_remote_id(self, remote_id: str) -> P.VoucherRow | None:
+    def find_voucher_by_remote_id(self, remote_id: str, voucher_date: date) -> P.VoucherRow | None:
         """Read-back after a push, to confirm what Tally actually created."""
-        today = date.today()
-        fiscal_start = date(today.year, 4, 1) if today.month >= 4 else date(today.year - 1, 4, 1)
-        vouchers = self.day_book(fiscal_start, today)
+        fiscal_start_year = voucher_date.year if voucher_date.month >= 4 else voucher_date.year - 1
+        vouchers = self.day_book(
+            date(fiscal_start_year, 4, 1), date(fiscal_start_year + 1, 3, 31)
+        )
         return next((v for v in vouchers if v.remote_id == remote_id), None)
 
     # -- writes ------------------------------------------------------------

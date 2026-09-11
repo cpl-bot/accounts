@@ -293,7 +293,7 @@ def _send(
         return PushResultItem(draft_id=draft.id, status="failed", errors=issues)
 
     draft.status = "committed"
-    _read_back(client, draft)
+    _read_back(client, draft, voucher)
     return PushResultItem(
         draft_id=draft.id,
         status="committed",
@@ -302,10 +302,12 @@ def _send(
     )
 
 
-def _read_back(client: TallyClient, draft: models.VoucherDraft) -> None:
+def _read_back(
+    client: TallyClient, draft: models.VoucherDraft, voucher: env.VoucherImport
+) -> None:
     """Confirm with Tally what it actually created, by REMOTEID."""
     try:
-        created = client.find_voucher_by_remote_id(draft.id)
+        created = client.find_voucher_by_remote_id(draft.id, voucher.voucher_date)
     except TallyError as exc:  # pragma: no cover - read-back is best effort
         logger.warning("read-back for draft %s failed: %s", draft.id, exc)
         return

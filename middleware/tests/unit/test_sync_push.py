@@ -88,6 +88,31 @@ def test_live_push_creates_a_voucher_and_reads_it_back(env) -> None:
     assert transport.state.voucher_by_remote_id(draft_id) is not None
 
 
+def test_backdated_live_push_reads_back_from_its_fiscal_year(env) -> None:
+    session, client, transport, settings = env
+    settings = settings.model_copy(update={"tally_write_enabled": True})
+    draft_id = queue_draft(
+        session,
+        dict(
+            PAYLOAD,
+            voucher_date="2025-03-31",
+            bill_date="2025-03-31",
+            due_date="2025-04-29",
+        ),
+    )
+
+    _run, results = sync_push.push(session, client, settings)
+    session.commit()
+
+    assert results[0].status == "committed"
+    draft = repo.get_draft(session, draft_id)
+    assert draft.tally_guid, "backdated read-back should use the voucher's fiscal year"
+    voucher_requests = [request for request in transport.requests if "TalaiVoucher" in request]
+    assert voucher_requests
+    assert "<SVFROMDATE>20240401</SVFROMDATE>" in voucher_requests[-1]
+    assert "<SVTODATE>20250331</SVTODATE>" in voucher_requests[-1]
+
+
 def test_invalid_draft_fails_without_touching_tally(env) -> None:
     session, client, transport, settings = env
     settings = settings.model_copy(update={"tally_write_enabled": True})

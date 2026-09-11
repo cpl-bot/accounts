@@ -88,7 +88,7 @@ def test_import_voucher_round_trip(tally: TallyClient) -> None:
     )
     result = tally.import_voucher(voucher)
     assert result.ok and result.created == 1
-    found = tally.find_voucher_by_remote_id("draft-round-trip")
+    found = tally.find_voucher_by_remote_id("draft-round-trip", date(2026, 6, 20))
     assert found is not None
     assert found.voucher_number.startswith("PUR/")
 
