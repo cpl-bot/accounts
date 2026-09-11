@@ -7,7 +7,7 @@
 - Specification: `docs/TALLY_INTEGRATION_NOTES.md` plus the board card acceptance criteria
 - Harness: `opencode`
 - Mode: `headless`
-- Model: `opencode-go/qwen3.7-plus`
+- Model: `opencode/muse-spark-1.3-contributor-free`
 - Effort: `high`
 - Lane: `reject-tally-protocol-errors`
 - Worktree: `/Users/admin/Documents/accounts-wt/reject-tally-protocol-errors`
