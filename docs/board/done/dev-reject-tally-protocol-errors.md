@@ -26,3 +26,7 @@ Do not own: request envelope shapes, dashboard/frontend files, database schema, 
 Out of scope: selecting the replacement voucher or bill export, changing API schemas, or treating every legitimate zero-row result as an error.
 
 Depends on: none.
+
+## Outcome (2026-09-11)
+
+Landed in `fa98dd8`. Plain-text Tally protocol errors now raise `TallyResponseError`, are audited as failures, and fail only the affected pull scope while preserving prior bill snapshots. Middleware verification passed with `uv run ruff check .` and `uv run pytest --tb=no` (`373 passed`, exit 0). Live Tally verification remains required before production rollout.
