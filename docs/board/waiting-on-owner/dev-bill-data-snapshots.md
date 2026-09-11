@@ -27,3 +27,14 @@ Do not own: voucher collection behavior already landed by its prerequisite, dash
 Out of scope: reconstructing historical outstanding balances from voucher allocations, changing Tally bill references, or adding AP/AR product features.
 
 Depends on: `dev-bounded-voucher-collection`, `debug-live-bill-export-shape`.
+
+## Implementation landed (2026-09-11)
+
+- Bill pulls now use explicit-as-of `TYPE=Data` exports without a lower date bound.
+- The parser handles the captured flat `BILLFIXED` records and their sibling values.
+- A failed direction preserves its existing snapshot.
+- Middleware Ruff and pytest passed independently (389 tests).
+
+## Waiting on owner
+
+Run read-only payable and receivable pulls against the office Tally, then reconcile returned counts and pending totals with the corresponding Tally reports.
