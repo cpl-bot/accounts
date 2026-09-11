@@ -65,6 +65,8 @@ def decode_response(raw: bytes | str) -> str:
             "Tally returned an HTML page, not XML — check the host/port and that "
             "the XML/HTTP server is enabled"
         )
+    if "UDF:" in text and "xmlns:UDF=" not in text:
+        text = text.replace("<ENVELOPE", '<ENVELOPE xmlns:UDF="urn:talai:udf"', 1)
     text = _CONTROL_REFS.sub("", text)
     text = _CONTROL_CHARS.sub("", text)
     text = _BARE_AMP.sub("&amp;", text)
@@ -284,6 +286,8 @@ def parse_vouchers(source: str | Element) -> list[VoucherRow]:
     """Vouchers from a Day Book / Voucher Register export."""
     rows: list[VoucherRow] = []
     for node in _iter(_root(source), "VOUCHER"):
+        if to_date(node.findtext("DATE")) is None:
+            continue
         ledger_entries = [
             VoucherLedgerEntry(
                 ledger_name=(e.findtext("LEDGERNAME") or "").strip(),
@@ -323,7 +327,7 @@ def parse_vouchers(source: str | Element) -> list[VoucherRow]:
                 guid=node.findtext("GUID") or None,
                 master_id=(node.findtext("MASTERID") or "").strip() or None,
                 alter_id=_int_or_none(node.findtext("ALTERID")),
-                remote_id=node.findtext("REMOTEID") or None,
+                remote_id=node.findtext("REMOTEID") or node.get("REMOTEID") or None,
                 is_cancelled=to_bool(node.findtext("ISCANCELLED")),
                 ledger_entries=ledger_entries,
                 inventory_entries=inventory_entries,

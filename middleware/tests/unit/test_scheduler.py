@@ -42,7 +42,7 @@ def test_a_successful_run_pulls_and_resets_the_breaker(settings) -> None:
 
 def test_a_partial_failure_counts_as_a_failed_run(settings) -> None:
     """One broken scope fails the whole attempt and feeds the breaker."""
-    scheduler = make(settings, fail_on={"Day Book"})
+    scheduler = make(settings, fail_on={"Voucher"})
     assert scheduler.run_once() is False
     assert scheduler.failures == 1
 

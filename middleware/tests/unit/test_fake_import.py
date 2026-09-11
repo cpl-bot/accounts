@@ -74,8 +74,7 @@ def test_created_voucher_is_visible_in_the_day_book(
 ) -> None:
     fake_transport.send(env.import_voucher(voucher("draft-visible")))
     vouchers = P.parse_vouchers(
-        fake_transport.send(env.report("Day Book", from_date=date(2026, 6, 1),
-                                       to_date=date(2026, 6, 30)))
+        fake_transport.send(env.voucher_collection(date(2026, 6, 1), date(2026, 6, 30)))
     )
     assert "draft-visible" in [v.remote_id for v in vouchers]
 

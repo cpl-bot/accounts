@@ -23,6 +23,25 @@ from xml.sax.saxutils import escape
 
 XML_VERSION = "1"
 BALANCE_TOLERANCE = Decimal("0.01")
+VOUCHER_FETCH = [
+    "DATE",
+    "VOUCHERNUMBER",
+    "VOUCHERTYPENAME",
+    "PARTYLEDGERNAME",
+    "PARTYNAME",
+    "NARRATION",
+    "REFERENCE",
+    "GUID",
+    "MASTERID",
+    "ALTERID",
+    "REMOTEID",
+    "ISCANCELLED",
+    "ALLLEDGERENTRIES.LIST",
+    "LEDGERENTRIES.LIST",
+    "ALLINVENTORYENTRIES.LIST",
+    "INVENTORYENTRIES.LIST",
+]
+VOUCHER_DATE_FILTER = "$Date >= ##SVFromDate AND $Date <= ##SVToDate"
 
 
 def fmt_date(value: date) -> str:
@@ -131,6 +150,20 @@ def collection(
         )
     return _envelope(
         _header("Export", "Collection", request_id), "<DESC>" + "".join(desc) + "</DESC>"
+    )
+
+
+def voucher_collection(from_date: date, to_date: date, company: str | None = None) -> str:
+    """Export vouchers through a date-bounded derived collection."""
+    if from_date > to_date:
+        raise ValueError("from_date must be on or before to_date")
+    return collection(
+        "Voucher",
+        fetch=VOUCHER_FETCH,
+        company=company,
+        from_date=from_date,
+        to_date=to_date,
+        filters=[("TalaiVoucherDate", VOUCHER_DATE_FILTER)],
     )
 
 

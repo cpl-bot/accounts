@@ -69,7 +69,7 @@ def test_masters_always_do_a_full_refresh(puller, transport) -> None:
 
 
 def test_pull_vouchers_filters_by_date_client_side(puller) -> None:
-    """The Day Book export ignores SVFROMDATE/SVTODATE, so we must re-filter."""
+    """The client-side filter remains defense in depth for voucher pulls."""
     puller.pull_vouchers(date(2026, 6, 1), date(2026, 6, 30))
     puller.session.commit()
     vouchers = repo.list_vouchers(puller.session)
@@ -146,7 +146,7 @@ def test_pull_marks_every_requested_scope_failed_when_tally_is_unreachable(
 
 def test_a_failing_scope_does_not_roll_back_or_block_the_others(db, settings) -> None:
     """masters commit, the failing scope keeps nothing, later scopes still run."""
-    transport = FakeTallyTransport(fail_on={"Day Book"})
+    transport = FakeTallyTransport(fail_on={"Voucher"})
     session = db.new_session()
     client = TallyClient(transport, company="Acme Foods Pvt Ltd")
     runs = SyncPuller(session, client, settings).run(["masters", "vouchers", "bills"])
@@ -171,14 +171,14 @@ def test_a_failing_scope_keeps_its_audit_row(db, settings) -> None:
     """The rollback must not erase the audit row of the call that failed."""
     from talai_middleware.db.audit_sink import SessionAuditSink
 
-    transport = FakeTallyTransport(fail_on={"Day Book"})
+    transport = FakeTallyTransport(fail_on={"Voucher"})
     session = db.new_session()
     client = TallyClient(transport, company="Acme Foods Pvt Ltd").with_audit(
         SessionAuditSink(session)
     )
     SyncPuller(session, client, settings).run(["vouchers"])
     rows = list(session.scalars(select(models.AuditLog)))
-    assert [r.operation for r in rows] == ["report:Day Book"]
+    assert [r.operation for r in rows] == ["collection:Voucher"]
     assert rows[0].status == "error"
     session.close()
 
@@ -216,9 +216,9 @@ def test_the_second_voucher_pull_uses_an_incremental_window(
 
     transport.requests.clear()
     puller.run(["vouchers"])
-    day_book = [r for r in transport.requests if "Day Book" in r]
-    assert day_book
-    assert f"<SVFROMDATE>{expected_start:%Y%m%d}</SVFROMDATE>" in day_book[-1]
+    voucher_requests = [r for r in transport.requests if "TalaiVoucher" in r]
+    assert voucher_requests
+    assert f"<SVFROMDATE>{expected_start:%Y%m%d}</SVFROMDATE>" in voucher_requests[-1]
     session.close()
 
 
@@ -292,7 +292,7 @@ class TestStockValuations:
 
 
 def test_plain_text_protocol_error_fails_the_scope(db, settings) -> None:
-    transport = FakeTallyTransport(plain_text_error_on={"Day Book"})
+    transport = FakeTallyTransport(plain_text_error_on={"Voucher"})
     session = db.new_session()
     client = TallyClient(transport, company="Acme Foods Pvt Ltd")
     runs = SyncPuller(session, client, settings).run(["vouchers"])

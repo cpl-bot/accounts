@@ -219,13 +219,9 @@ class TallyClient:
         )
 
     def day_book(self, from_date: date, to_date: date) -> list[P.VoucherRow]:
-        """Vouchers for a date range.
-
-        TallyPrime is known to ignore ``SVFROMDATE``/``SVTODATE`` on some Day
-        Book exports, so callers must re-filter by date; ``sync_pull`` does.
-        """
-        xml = env.report("Day Book", company=self.company, from_date=from_date, to_date=to_date)
-        return self._send(xml, "report:Day Book", P.parse_vouchers)
+        """Vouchers for a date range from a TDL-filtered collection."""
+        xml = env.voucher_collection(from_date, to_date, company=self.company)
+        return self._send(xml, "collection:Voucher", P.parse_vouchers)
 
     def stock_valuation(self, as_on: date) -> Decimal | None:
         """Total closing stock value as on a date, from the Stock Summary report."""
@@ -241,8 +237,9 @@ class TallyClient:
 
     def find_voucher_by_remote_id(self, remote_id: str) -> P.VoucherRow | None:
         """Read-back after a push, to confirm what Tally actually created."""
-        xml = env.report("Day Book", company=self.company)
-        vouchers = self._send(xml, "report:Day Book (read-back)", P.parse_vouchers)
+        today = date.today()
+        fiscal_start = date(today.year, 4, 1) if today.month >= 4 else date(today.year - 1, 4, 1)
+        vouchers = self.day_book(fiscal_start, today)
         return next((v for v in vouchers if v.remote_id == remote_id), None)
 
     # -- writes ------------------------------------------------------------

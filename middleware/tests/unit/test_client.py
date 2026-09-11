@@ -58,10 +58,19 @@ def test_delta_by_alter_id(tally: TallyClient) -> None:
 
 def test_day_book_and_bills(tally: TallyClient) -> None:
     vouchers = tally.day_book(date(2026, 6, 1), date(2026, 6, 30))
-    assert vouchers, "expected the fake Day Book to return vouchers"
+    assert vouchers, "expected the fake Voucher collection to return vouchers"
     payable = tally.bills("payable")
     assert all(b.direction == "payable" for b in payable)
     assert sum(b.pending_amount for b in payable) > Decimal("0")
+
+
+def test_day_book_rejects_reversed_range_before_network_io(
+    fake_transport: FakeTallyTransport,
+) -> None:
+    client = TallyClient(fake_transport)
+    with pytest.raises(ValueError, match="from_date must be on or before to_date"):
+        client.day_book(date(2026, 7, 1), date(2026, 6, 30))
+    assert fake_transport.requests == []
 
 
 def test_import_voucher_round_trip(tally: TallyClient) -> None:
@@ -153,7 +162,7 @@ def test_ping_defaults_to_client_timeout() -> None:
 
 
 def test_parser_failure_is_audited_as_error(audit: MemoryAuditSink) -> None:
-    transport = FakeTallyTransport(plain_text_error_on={"Day Book"})
+    transport = FakeTallyTransport(plain_text_error_on={"Voucher"})
     client = TallyClient(transport, company="Acme Foods Pvt Ltd", audit=audit)
     with pytest.raises(TallyResponseError):
         client.day_book(date(2026, 6, 1), date(2026, 6, 30))

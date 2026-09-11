@@ -190,7 +190,7 @@ class TestSyncRoutes:
         self, client: TestClient, fake_transport
     ) -> None:
         pull_everything(client)
-        fake_transport.fail_on = {"daybook"}
+        fake_transport.fail_on = {"voucher"}
         body = client.post(
             "/api/v1/sync/pull", json={"scopes": ["masters", "vouchers"]}
         ).json()

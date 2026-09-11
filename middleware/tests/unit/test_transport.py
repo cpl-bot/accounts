@@ -89,6 +89,25 @@ class TestFakeTransportExports:
         with pytest.raises(TallyResponseError):
             P.parse_xml(P.decode_response(fake_transport.send(env.collection("Nonsense"))))
 
+    def test_day_book_report_is_rejected(self, fake_transport: FakeTallyTransport) -> None:
+        from talai_middleware.tally import envelopes as env
+        from talai_middleware.tally.errors import TallyResponseError
+
+        with pytest.raises(TallyResponseError, match="Day Book report is unsupported"):
+            P.parse_xml(P.decode_response(fake_transport.send(env.report("Day Book"))))
+
+    def test_bounded_voucher_collection_is_filtered_by_fake(self) -> None:
+        from datetime import date
+
+        from talai_middleware.tally import envelopes as env
+
+        transport = FakeTallyTransport()
+        vouchers = P.parse_vouchers(
+            transport.send(env.voucher_collection(date(2026, 6, 1), date(2026, 6, 30)))
+        )
+        assert vouchers
+        assert all(v.date and date(2026, 6, 1) <= v.date <= date(2026, 6, 30) for v in vouchers)
+
     def test_records_requests(self, fake_transport: FakeTallyTransport) -> None:
         from talai_middleware.tally import envelopes as env
 

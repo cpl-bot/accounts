@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -156,6 +157,21 @@ class TestVouchers:
         assert inv.hsn == "4015"
         assert vouchers[1].voucher_type == "Sales"
         assert vouchers[1].inventory_entries == []
+
+    def test_owner_fixture_parses_nested_vouchers(self) -> None:
+        fixture = (
+            Path(__file__).parents[3]
+            / "docs"
+            / "board"
+            / "fixtures"
+            / "fixture1_daybook_vouchers_anon.xml"
+        )
+        vouchers = P.parse_vouchers(fixture.read_text(encoding="utf-8"))
+        assert len(vouchers) == 10
+        assert all(v.date == date(2026, 9, 11) for v in vouchers)
+        assert len(vouchers[0].ledger_entries) == 9
+        assert vouchers[0].ledger_entries[0].ledger_name == "Party 002 (D93FD5)"
+        assert vouchers[0].remote_id.endswith("000083c6")
 
 
 class TestBills:

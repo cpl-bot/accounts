@@ -82,6 +82,33 @@ def test_collection_with_filters_builds_tdl_collection() -> None:
     assert system.text == "$AlterID > 42"
 
 
+def test_bounded_voucher_collection_uses_date_filter_and_nested_fetches() -> None:
+    root = parse(
+        env.voucher_collection(
+            date(2026, 6, 1), date(2026, 6, 30), company="Acme Foods Pvt Ltd"
+        )
+    )
+    assert text(root, "HEADER/TALLYREQUEST") == "Export"
+    assert text(root, "HEADER/TYPE") == "Collection"
+    assert text(root, "HEADER/ID") == "TalaiVoucher"
+    assert text(root, "BODY/DESC/TDL/TDLMESSAGE/COLLECTION/TYPE") == "Voucher"
+    sv = "BODY/DESC/STATICVARIABLES/"
+    assert text(root, sv + "SVFROMDATE") == "20260601"
+    assert text(root, sv + "SVTODATE") == "20260630"
+    fetches = [f.text for f in root.findall("BODY/DESC/FETCHLIST/FETCH")]
+    assert {"DATE", "VOUCHERNUMBER", "VOUCHERTYPENAME", "PARTYLEDGERNAME"} <= set(fetches)
+    assert {"ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"} <= set(fetches)
+    assert {"ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST"} <= set(fetches)
+    system = root.find("BODY/DESC/TDL/TDLMESSAGE/SYSTEM[@NAME='TalaiVoucherDate']")
+    assert system is not None
+    assert system.text == "$Date >= ##SVFromDate AND $Date <= ##SVToDate"
+
+
+def test_bounded_voucher_collection_rejects_reversed_range() -> None:
+    with pytest.raises(ValueError, match="from_date must be on or before to_date"):
+        env.voucher_collection(date(2026, 7, 1), date(2026, 6, 30))
+
+
 def test_report_envelope() -> None:
     root = parse(env.report("Bills Payable", company="Acme", to_date=date(2026, 6, 30)))
     assert text(root, "HEADER/TYPE") == "Report"

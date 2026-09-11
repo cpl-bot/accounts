@@ -6,11 +6,10 @@ services, routes and the support scripts — can be exercised without a Tally on
 the network. It also enforces the v1 safety rule: any ``ACTION="Alter"`` or
 ``ACTION="Delete"`` in a request raises, because no code path may emit one.
 
-Known quirk it reproduces deliberately: a Day Book export ignores
-``SVFROMDATE``/``SVTODATE`` (see ``docs/TALLY_INTEGRATION_NOTES.md`` §11), so
-callers must re-filter by date themselves.
+Voucher exports must use the derived, date-bounded collection contract; the old
+Day Book report form is rejected so tests cannot accidentally preserve it.
 
-Pass ``reachable=False`` to make every request fail, or ``fail_on={"daybook"}``
+Pass ``reachable=False`` to make every request fail, or ``fail_on={"voucher"}``
 to fail only some exports — enough to drive a pull where one scope breaks and
 the others do not.
 """
@@ -80,14 +79,12 @@ class FakeTallyTransport:
         state: FakeState | None = None,
         *,
         reachable: bool = True,
-        ignore_date_filter: bool = True,
         fail_on: set[str] | None = None,
         plain_text_error_on: set[str] | None = None,
     ) -> None:
         self.state = state or default_state()
         self.reachable = reachable
-        self.ignore_date_filter = ignore_date_filter
-        #: normalised export names (``"daybook"``, ``"billspayable"``,
+        #: normalised export names (``"voucher"``, ``"billspayable"``,
         #: ``"stocksummary"``, ``"ledger"`` …) that raise instead of answering,
         #: so a test can make exactly one scope of a pull fail.
         self.fail_on = {name.replace(" ", "").lower() for name in (fail_on or ())}
@@ -125,6 +122,9 @@ class FakeTallyTransport:
 
     def _handle_export(self, root: Element) -> str:
         request_id = (root.findtext("HEADER/ID") or "").strip()
+        request_type = (root.findtext("HEADER/TYPE") or "").strip()
+        if request_type == "Report" and request_id == "Day Book":
+            return _failure("Unsupported Request", "Day Book report is unsupported")
         collection_type = root.findtext("BODY/DESC/TDL/TDLMESSAGE/COLLECTION/TYPE")
         name = (collection_type or request_id).strip()
         if name.startswith("Talai"):
@@ -136,6 +136,10 @@ class FakeTallyTransport:
             return "<RESPONSE>Unknown Request, cannot be processed</RESPONSE>"
         if normalised == "stocksummary":
             return _envelope(self._stock_summary(self._as_on(root)))
+        if normalised == "voucher" and not self._is_bounded_voucher_request(
+            root, request_id, request_type, collection_type
+        ):
+            return _failure("Invalid Request", "Voucher exports require a bounded date filter")
         min_alter_id = self._alter_id_floor(root)
         handler = {
             "company": self._companies,
@@ -149,15 +153,44 @@ class FakeTallyTransport:
             "costcentre": self._cost_centres,
             "godown": self._godowns,
             "vouchertype": self._voucher_types,
-            "voucher": self._vouchers,
-            "daybook": self._vouchers,
-            "voucherregister": self._vouchers,
+            "voucher": lambda floor: self._vouchers(floor, self._date_window(root)),
             "billspayable": self._bills_payable,
             "billsreceivable": self._bills_receivable,
         }.get(normalised)
         if handler is None:
             return _failure("Unknown Request", f"Could not understand the request '{name}'")
         return _envelope(handler(min_alter_id))
+
+    @staticmethod
+    def _date_window(root: Element) -> tuple[date, date]:
+        from .parsers import to_date
+
+        from_date = to_date(root.findtext("BODY/DESC/STATICVARIABLES/SVFROMDATE"))
+        to_date_value = to_date(root.findtext("BODY/DESC/STATICVARIABLES/SVTODATE"))
+        if from_date is None or to_date_value is None:
+            raise ValueError("bounded voucher request is missing dates")
+        return from_date, to_date_value
+
+    @classmethod
+    def _is_bounded_voucher_request(
+        cls, root: Element, request_id: str, request_type: str, collection_type: str | None
+    ) -> bool:
+        if (
+            request_type != "Collection"
+            or request_id != "TalaiVoucher"
+            or collection_type != "Voucher"
+        ):
+            return False
+        system = root.find("BODY/DESC/TDL/TDLMESSAGE/SYSTEM[@NAME='TalaiVoucherDate']")
+        if system is None or (system.text or "").strip() != (
+            "$Date >= ##SVFromDate AND $Date <= ##SVToDate"
+        ):
+            return False
+        try:
+            from_date, to_date = cls._date_window(root)
+        except ValueError:
+            return False
+        return from_date <= to_date
 
     @staticmethod
     def _as_on(root: Element) -> date:
@@ -289,11 +322,13 @@ class FakeTallyTransport:
     def _voucher_types(self, min_alter_id: int) -> str:
         return self._named("VOUCHERTYPE", self.state.voucher_types, min_alter_id)
 
-    def _vouchers(self, min_alter_id: int) -> str:
+    def _vouchers(self, min_alter_id: int, window: tuple[date, date]) -> str:
+        from_date, to_date = window
         return "".join(
             f"<TALLYMESSAGE>{self._voucher_xml(v)}</TALLYMESSAGE>"
             for v in self.state.vouchers
             if v.alter_id > min_alter_id
+            and from_date <= v.date <= to_date
         )
 
     def _voucher_xml(self, v: FakeVoucher) -> str:
