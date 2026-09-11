@@ -77,3 +77,15 @@ reconstructing bill state for dates other than "currently open."
 Depends on: `dev-bill-data-snapshots` (the `bills` table has no usable rows
 until the live request/parse shape is fixed; this card's live verification
 step cannot run until then).
+
+## Outcome (2026-09-11)
+
+Implemented in `5cb55ec`. `GET /bills` now supports an optional case-insensitive
+substring `party` filter, including filtered totals. Added `GET /bills/by-party`
+with direction/as-of semantics, descending pending balance ordering, deterministic
+party-name tie breaking, and open-bill counts. Repository and API tests cover
+matches, no match, ordering, ties, and an empty direction at the repository
+boundary. Middleware Ruff and the full pytest suite passed (`397 passed`).
+
+The optional live Tally bill-for-bill comparison was not run in this session and
+remains required before production rollout.
