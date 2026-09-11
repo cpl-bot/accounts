@@ -45,3 +45,6 @@ middleware/data/
 htmlcov/
 .coverage
 data/
+.claude/
+.opencode/
+.serena/
