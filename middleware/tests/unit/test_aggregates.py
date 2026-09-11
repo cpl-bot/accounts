@@ -6,6 +6,7 @@ from decimal import Decimal
 
 import pytest
 
+from talai_middleware.db import models
 from talai_middleware.db.base import Database
 from talai_middleware.services import aggregates
 from talai_middleware.services.sync_pull import SyncPuller
@@ -83,6 +84,26 @@ class TestAging:
         buckets = aggregates.aging_buckets(session, "payable", date(2026, 8, 15))
         total = sum(b.amount for b in buckets)
         assert total == Decimal("48755.00")
+
+    def test_future_dated_bill_is_excluded_like_list_bills(self, session) -> None:
+        session.add(
+            models.Bill(
+                party_ledger="BioShield Medical & Co",
+                bill_name="FUTURE/1",
+                bill_date=date(2026, 8, 1),
+                due_date=date(2026, 8, 31),
+                pending_amount=Decimal("100.00"),
+                direction="payable",
+            )
+        )
+        session.commit()
+
+        all_buckets = aggregates.aging_buckets(session, "payable", date(2026, 7, 1))
+        party_buckets = aggregates.aging_buckets(
+            session, "payable", date(2026, 7, 1), party="bioshield"
+        )
+        assert sum(bucket.amount for bucket in all_buckets) == Decimal("48755.00")
+        assert sum(bucket.amount for bucket in party_buckets) == Decimal("29875.00")
 
 
 class TestPayables:

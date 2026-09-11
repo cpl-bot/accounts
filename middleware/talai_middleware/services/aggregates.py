@@ -305,7 +305,9 @@ def aging_buckets(
     totals: dict[str, Decimal] = {label: ZERO for label, _ in AGING_BUCKETS}
     counts: dict[str, int] = {label: 0 for label, _ in AGING_BUCKETS}
     stmt = select(models.Bill).where(
-        models.Bill.direction == direction, models.Bill.pending_amount != 0
+        models.Bill.direction == direction,
+        models.Bill.pending_amount != 0,
+        (models.Bill.bill_date.is_(None)) | (models.Bill.bill_date <= as_on),
     )
     if party:
         stmt = stmt.where(models.Bill.party_ledger.ilike(f"%{party}%"))
