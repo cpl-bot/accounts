@@ -82,6 +82,7 @@ class FakeTallyTransport:
         reachable: bool = True,
         ignore_date_filter: bool = True,
         fail_on: set[str] | None = None,
+        plain_text_error_on: set[str] | None = None,
     ) -> None:
         self.state = state or default_state()
         self.reachable = reachable
@@ -90,6 +91,12 @@ class FakeTallyTransport:
         #: ``"stocksummary"``, ``"ledger"`` …) that raise instead of answering,
         #: so a test can make exactly one scope of a pull fail.
         self.fail_on = {name.replace(" ", "").lower() for name in (fail_on or ())}
+        #: normalised export names that get a plain ``<RESPONSE>`` leaf instead
+        #: of a structured ``STATUS=0`` envelope — the shape Tally sometimes
+        #: returns for "Unknown Request" style errors.
+        self.plain_text_error_on = {
+            name.replace(" ", "").lower() for name in (plain_text_error_on or ())
+        }
         self.requests: list[str] = []
         self._voucher_seq = len(self.state.vouchers)
 
@@ -122,9 +129,12 @@ class FakeTallyTransport:
         name = (collection_type or request_id).strip()
         if name.startswith("Talai"):
             name = name[len("Talai") :]
-        if name.replace(" ", "").lower() in self.fail_on:
+        normalised = name.replace(" ", "").lower()
+        if normalised in self.fail_on:
             raise TallyUnreachable(f"Fake Tally is configured to fail on '{name}'")
-        if name.replace(" ", "").lower() == "stocksummary":
+        if normalised in self.plain_text_error_on:
+            return "<RESPONSE>Unknown Request, cannot be processed</RESPONSE>"
+        if normalised == "stocksummary":
             return _envelope(self._stock_summary(self._as_on(root)))
         min_alter_id = self._alter_id_floor(root)
         handler = {
@@ -141,7 +151,7 @@ class FakeTallyTransport:
             "voucherregister": self._vouchers,
             "billspayable": self._bills_payable,
             "billsreceivable": self._bills_receivable,
-        }.get(name.replace(" ", "").lower())
+        }.get(normalised)
         if handler is None:
             return _failure("Unknown Request", f"Could not understand the request '{name}'")
         return _envelope(handler(min_alter_id))

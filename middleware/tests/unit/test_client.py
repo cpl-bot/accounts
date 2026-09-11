@@ -10,7 +10,7 @@ import pytest
 from talai_middleware.audit import MemoryAuditSink
 from talai_middleware.tally import envelopes as env
 from talai_middleware.tally.client import TallyClient
-from talai_middleware.tally.errors import TallyUnreachable
+from talai_middleware.tally.errors import TallyResponseError, TallyUnreachable
 from talai_middleware.tally.fake import FakeTallyTransport
 
 
@@ -138,3 +138,12 @@ def test_ping_defaults_to_client_timeout() -> None:
     client = TallyClient(transport, timeout=30.0)
     client.ping()
     assert transport.timeouts == [30.0]
+
+
+def test_parser_failure_is_audited_as_error(audit: MemoryAuditSink) -> None:
+    transport = FakeTallyTransport(plain_text_error_on={"Day Book"})
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd", audit=audit)
+    with pytest.raises(TallyResponseError):
+        client.day_book(date(2026, 6, 1), date(2026, 6, 30))
+    assert audit.entries[-1].status == "error"
+    assert audit.entries[-1].error

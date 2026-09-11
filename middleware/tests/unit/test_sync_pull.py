@@ -289,3 +289,32 @@ class TestStockValuations:
         assert [r.scope for r in runs] == ["stock"]
         assert runs[0].status == "success"
         assert puller.session.scalar(select(func.count()).select_from(m.StockValuation)) > 0
+
+
+def test_plain_text_protocol_error_fails_the_scope(db, settings) -> None:
+    transport = FakeTallyTransport(plain_text_error_on={"Day Book"})
+    session = db.new_session()
+    client = TallyClient(transport, company="Acme Foods Pvt Ltd")
+    runs = SyncPuller(session, client, settings).run(["vouchers"])
+    assert runs[0].status == "failed"
+    assert runs[0].error
+    session.close()
+
+
+def test_failed_bills_scope_preserves_previous_snapshot(db, settings) -> None:
+    session = db.new_session()
+    good_transport = FakeTallyTransport()
+    client = TallyClient(good_transport, company="Acme Foods Pvt Ltd")
+    SyncPuller(session, client, settings).run(["bills"])
+    session.commit()
+    prior_payable = repo.list_bills(session, "payable")
+    assert len(prior_payable) > 0
+
+    bad_transport = FakeTallyTransport(plain_text_error_on={"Bills Payable"})
+    bad_client = TallyClient(bad_transport, company="Acme Foods Pvt Ltd")
+    runs = SyncPuller(session, bad_client, settings).run(["bills"])
+    assert runs[0].status == "failed"
+
+    still_there = repo.list_bills(session, "payable")
+    assert len(still_there) == len(prior_payable)
+    session.close()

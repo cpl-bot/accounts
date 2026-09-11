@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -110,17 +111,23 @@ class TallyClient:
         self,
         xml: str,
         operation: str,
+        parse: Callable,
         direction: str = "out",
         timeout: float | None = None,
-    ) -> str:
+    ):
         started = time.perf_counter()
         try:
             response = self.transport.send(xml, timeout if timeout is not None else self.timeout)
         except TallyError as exc:
             self._audit(direction, operation, xml, None, "error", started, str(exc))
             raise
+        try:
+            result = parse(response)
+        except TallyError as exc:
+            self._audit(direction, operation, xml, response, "error", started, str(exc))
+            raise
         self._audit(direction, operation, xml, response, "ok", started, None)
-        return response
+        return result
 
     def _audit(
         self,
@@ -149,10 +156,11 @@ class TallyClient:
         self,
         name: str,
         fetch: list[str],
+        parse: Callable,
         since_alter_id: int | None = None,
         from_date: date | None = None,
         to_date: date | None = None,
-    ) -> str:
+    ):
         filters = (
             [("TalaiAlterId", f"$AlterID > {since_alter_id}")]
             if since_alter_id is not None
@@ -166,35 +174,48 @@ class TallyClient:
             to_date=to_date,
             filters=filters,
         )
-        return self._send(xml, f"collection:{name}")
+        return self._send(xml, f"collection:{name}", parse)
 
     # -- reads -------------------------------------------------------------
 
     def list_companies(self, timeout: float | None = None) -> list[P.Company]:
-        return P.parse_companies(
-            self._send(env.list_companies(), "list_companies", timeout=timeout)
+        return self._send(
+            env.list_companies(), "list_companies", P.parse_companies, timeout=timeout
         )
 
     def ledgers(self, since_alter_id: int | None = None) -> list[P.LedgerRow]:
-        return P.parse_ledgers(self._collection("Ledger", LEDGER_FETCH, since_alter_id))
+        return self._collection("Ledger", LEDGER_FETCH, P.parse_ledgers, since_alter_id)
 
     def groups(self, since_alter_id: int | None = None) -> list[P.GroupRow]:
-        return P.parse_groups(self._collection("Group", GROUP_FETCH, since_alter_id))
+        return self._collection("Group", GROUP_FETCH, P.parse_groups, since_alter_id)
 
     def stock_items(self, since_alter_id: int | None = None) -> list[P.StockItemRow]:
-        return P.parse_stock_items(self._collection("StockItem", STOCK_FETCH, since_alter_id))
+        return self._collection(
+            "StockItem", STOCK_FETCH, P.parse_stock_items, since_alter_id
+        )
 
     def cost_centres(self, since_alter_id: int | None = None) -> list[P.MasterRow]:
-        return P.parse_named(
-            self._collection("CostCentre", NAME_FETCH, since_alter_id), "COSTCENTRE"
+        return self._collection(
+            "CostCentre",
+            NAME_FETCH,
+            lambda r: P.parse_named(r, "COSTCENTRE"),
+            since_alter_id,
         )
 
     def godowns(self, since_alter_id: int | None = None) -> list[P.MasterRow]:
-        return P.parse_named(self._collection("Godown", NAME_FETCH, since_alter_id), "GODOWN")
+        return self._collection(
+            "Godown",
+            NAME_FETCH,
+            lambda r: P.parse_named(r, "GODOWN"),
+            since_alter_id,
+        )
 
     def voucher_types(self, since_alter_id: int | None = None) -> list[P.MasterRow]:
-        return P.parse_named(
-            self._collection("VoucherType", NAME_FETCH, since_alter_id), "VOUCHERTYPE"
+        return self._collection(
+            "VoucherType",
+            NAME_FETCH,
+            lambda r: P.parse_named(r, "VOUCHERTYPE"),
+            since_alter_id,
         )
 
     def day_book(self, from_date: date, to_date: date) -> list[P.VoucherRow]:
@@ -204,33 +225,35 @@ class TallyClient:
         Book exports, so callers must re-filter by date; ``sync_pull`` does.
         """
         xml = env.report("Day Book", company=self.company, from_date=from_date, to_date=to_date)
-        return P.parse_vouchers(self._send(xml, "report:Day Book"))
+        return self._send(xml, "report:Day Book", P.parse_vouchers)
 
     def stock_valuation(self, as_on: date) -> Decimal | None:
         """Total closing stock value as on a date, from the Stock Summary report."""
         xml = env.stock_summary_report(as_on, company=self.company)
-        return P.parse_stock_valuation(self._send(xml, "report:Stock Summary"))
+        return self._send(xml, "report:Stock Summary", P.parse_stock_valuation)
 
     def bills(self, direction: str) -> list[P.BillRow]:
         report_name = "Bills Payable" if direction == "payable" else "Bills Receivable"
         xml = env.report(report_name, company=self.company)
-        return P.parse_bills(self._send(xml, f"report:{report_name}"), direction=direction)
+        return self._send(
+            xml, f"report:{report_name}", lambda r: P.parse_bills(r, direction=direction)
+        )
 
     def find_voucher_by_remote_id(self, remote_id: str) -> P.VoucherRow | None:
         """Read-back after a push, to confirm what Tally actually created."""
         xml = env.report("Day Book", company=self.company)
-        vouchers = P.parse_vouchers(self._send(xml, "report:Day Book (read-back)"))
+        vouchers = self._send(xml, "report:Day Book (read-back)", P.parse_vouchers)
         return next((v for v in vouchers if v.remote_id == remote_id), None)
 
     # -- writes ------------------------------------------------------------
 
     def import_voucher(self, voucher: env.VoucherImport) -> P.ImportResult:
         xml = env.import_voucher(voucher, company=self.company)
-        return P.parse_import_result(self._send(xml, "import:voucher", direction="in"))
+        return self._send(xml, "import:voucher", P.parse_import_result, direction="in")
 
     def import_ledger(self, **kwargs) -> P.ImportResult:
         xml = env.import_ledger(company=self.company, **kwargs)
-        return P.parse_import_result(self._send(xml, "import:ledger", direction="in"))
+        return self._send(xml, "import:ledger", P.parse_import_result, direction="in")
 
     # -- connection hygiene ------------------------------------------------
 

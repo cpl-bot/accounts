@@ -47,8 +47,33 @@ class TestDecode:
 class TestStatus:
     def test_status_zero_raises(self, fixture_xml) -> None:
         with pytest.raises(TallyResponseError) as exc:
-            P.parse_xml(P.decode_response(fixture_xml("error_status_zero.xml")))
+            P.parse_xml(fixture_xml("error_status_zero.xml"))
         assert "Unknown Request" in str(exc.value)
+
+
+class TestPlainTextError:
+    def test_plain_response_leaf_raises(self) -> None:
+        with pytest.raises(TallyResponseError, match="Unknown Request"):
+            P.parse_xml("<RESPONSE>Unknown Request, cannot be processed</RESPONSE>")
+
+    def test_plain_response_leaf_preserves_server_message(self) -> None:
+        with pytest.raises(TallyResponseError) as exc:
+            P.parse_xml("<RESPONSE>Company not loaded</RESPONSE>")
+        assert "Company not loaded" in str(exc.value)
+
+    def test_valid_empty_envelope_is_not_rejected(self) -> None:
+        root = P.parse_xml(
+            "<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER>"
+            "<BODY><DATA/></BODY></ENVELOPE>"
+        )
+        assert root.tag == "ENVELOPE"
+
+    def test_envelope_with_no_data_rows_is_not_rejected(self) -> None:
+        ledgers = P.parse_ledgers(
+            "<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER>"
+            "<BODY><DATA><COLLECTION/></DATA></BODY></ENVELOPE>"
+        )
+        assert ledgers == []
 
 
 class TestMasters:

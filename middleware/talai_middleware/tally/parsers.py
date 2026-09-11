@@ -90,6 +90,7 @@ def parse_xml(text: str) -> Element:
     except Exception as exc:  # noqa: BLE001 - any parse failure is the same to us
         raise TallyResponseError(f"Could not parse Tally XML: {exc}") from exc
     _raise_for_status(root)
+    _raise_for_plain_text_error(root)
     return root
 
 
@@ -99,6 +100,17 @@ def _raise_for_status(root: Element) -> None:
         code = root.findtext(".//STATUS.LIST/STATUS/CODE") or "UNKNOWN"
         desc = root.findtext(".//STATUS.LIST/STATUS/DESC") or "Tally reported a failure"
         raise TallyResponseError(f"Tally error {code}: {desc}", details={"code": code})
+
+
+def _raise_for_plain_text_error(root: Element) -> None:
+    if root.tag == "ENVELOPE":
+        return
+    text = (root.text or "").strip()
+    if not text:
+        return
+    if list(root):
+        return
+    raise TallyResponseError(f"Tally returned a plain-text error: {text}")
 
 
 def _root(source: str | Element) -> Element:
