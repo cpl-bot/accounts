@@ -36,6 +36,7 @@ The fake must reject the old report form and enforce the derived request's date 
 - `middleware/talai_middleware/tally/envelopes.py`
 - `middleware/talai_middleware/tally/client.py`
 - `middleware/talai_middleware/tally/fake.py`
+- The narrow `middleware/talai_middleware/services/sync_push.py` read-back call-site change required to supply the imported voucher date
 - Voucher fixtures and focused middleware tests for this behavior
 - The `bounded-voucher-collection` row in `docs/lanes.md`
 
@@ -66,3 +67,7 @@ The fake must reject the old report form and enforce the derived request's date 
 ## Report contract
 
 Return branch, worktree, commit, lane status, changed/excluded files, implemented mechanism, gate exit codes/counts, unrun tests, known residue, and any remaining owner-side live verification.
+
+## Correction (owner-approved 2026-09-11)
+
+The initial implementation changed `find_voucher_by_remote_id()` to search the current fiscal year, which can miss a backdated import. Preserve read-back behavior by querying the fiscal year containing the imported voucher date. The lane is authorized to make only the required `sync_push.py` call-site/signature change and a focused regression test; do not broaden write-path behavior.
