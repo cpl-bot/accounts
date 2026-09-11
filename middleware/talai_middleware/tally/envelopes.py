@@ -74,14 +74,17 @@ def _static_variables(
     from_date: date | None = None,
     to_date: date | None = None,
     extra: dict[str, str] | None = None,
+    typed_dates: bool = False,
 ) -> str:
     parts = ["<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"]
     if company:
         parts.append(_tag("SVCURRENTCOMPANY", company))
     if from_date:
-        parts.append(_tag("SVFROMDATE", fmt_date(from_date)))
+        date_type = ' TYPE="Date"' if typed_dates else ""
+        parts.append(f"<SVFROMDATE{date_type}>{fmt_date(from_date)}</SVFROMDATE>")
     if to_date:
-        parts.append(_tag("SVTODATE", fmt_date(to_date)))
+        date_type = ' TYPE="Date"' if typed_dates else ""
+        parts.append(f"<SVTODATE{date_type}>{fmt_date(to_date)}</SVTODATE>")
     for key, value in (extra or {}).items():
         parts.append(_tag(key, value))
     return "<STATICVARIABLES>" + "".join(parts) + "</STATICVARIABLES>"
@@ -120,6 +123,7 @@ def collection(
     from_date: date | None = None,
     to_date: date | None = None,
     filters: list[tuple[str, str]] | None = None,
+    typed_dates: bool = False,
 ) -> str:
     """Export a Tally collection.
 
@@ -128,7 +132,10 @@ def collection(
     is declared inline via TDL and requested instead of the base collection,
     which is the documented way to filter a collection export.
     """
-    desc = [_static_variables(company, from_date, to_date), _fetchlist(fetch)]
+    desc = [
+        _static_variables(company, from_date, to_date, typed_dates=typed_dates),
+        _fetchlist(fetch),
+    ]
     # Tally treats the native ``Group`` collection ID as a reserved shape that
     # ignores FETCHLIST. ``List of Groups`` returns the requested fields.
     request_id = "List of Groups" if name == "Group" and not filters else name
@@ -164,6 +171,7 @@ def voucher_collection(from_date: date, to_date: date, company: str | None = Non
         from_date=from_date,
         to_date=to_date,
         filters=[("TalaiVoucherDate", VOUCHER_DATE_FILTER)],
+        typed_dates=True,
     )
 
 

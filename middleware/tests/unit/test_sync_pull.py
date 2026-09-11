@@ -218,7 +218,7 @@ def test_the_second_voucher_pull_uses_an_incremental_window(
     puller.run(["vouchers"])
     voucher_requests = [r for r in transport.requests if "TalaiVoucher" in r]
     assert voucher_requests
-    assert f"<SVFROMDATE>{expected_start:%Y%m%d}</SVFROMDATE>" in voucher_requests[-1]
+    assert f'<SVFROMDATE TYPE="Date">{expected_start:%Y%m%d}</SVFROMDATE>' in voucher_requests[-1]
     session.close()
 
 

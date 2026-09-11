@@ -9,6 +9,7 @@ import pytest
 
 from talai_middleware.audit import MemoryAuditSink
 from talai_middleware.tally import envelopes as env
+from talai_middleware.tally import parsers as P
 from talai_middleware.tally.client import TallyClient
 from talai_middleware.tally.errors import TallyResponseError, TallyUnreachable
 from talai_middleware.tally.fake import FakeTallyTransport
@@ -82,6 +83,16 @@ def test_day_book_rejects_reversed_range_before_network_io(
     with pytest.raises(ValueError, match="from_date must be on or before to_date"):
         client.day_book(date(2026, 7, 1), date(2026, 6, 30))
     assert fake_transport.requests == []
+
+
+def test_fake_rejects_untyped_voucher_date_bounds(
+    fake_transport: FakeTallyTransport,
+) -> None:
+    xml = env.voucher_collection(date(2026, 6, 1), date(2026, 6, 30)).replace(
+        ' TYPE="Date"', ""
+    )
+    with pytest.raises(TallyResponseError, match="bounded date filter"):
+        TallyClient(fake_transport)._send(xml, "collection:Voucher", P.parse_vouchers)
 
 
 def test_import_voucher_round_trip(tally: TallyClient) -> None:

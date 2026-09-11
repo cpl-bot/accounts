@@ -109,8 +109,8 @@ def test_backdated_live_push_reads_back_from_its_fiscal_year(env) -> None:
     assert draft.tally_guid, "backdated read-back should use the voucher's fiscal year"
     voucher_requests = [request for request in transport.requests if "TalaiVoucher" in request]
     assert voucher_requests
-    assert "<SVFROMDATE>20240401</SVFROMDATE>" in voucher_requests[-1]
-    assert "<SVTODATE>20250331</SVTODATE>" in voucher_requests[-1]
+    assert '<SVFROMDATE TYPE="Date">20240401</SVFROMDATE>' in voucher_requests[-1]
+    assert '<SVTODATE TYPE="Date">20250331</SVTODATE>' in voucher_requests[-1]
 
 
 def test_invalid_draft_fails_without_touching_tally(env) -> None:

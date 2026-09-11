@@ -95,6 +95,8 @@ def test_bounded_voucher_collection_uses_date_filter_and_nested_fetches() -> Non
     sv = "BODY/DESC/STATICVARIABLES/"
     assert text(root, sv + "SVFROMDATE") == "20260601"
     assert text(root, sv + "SVTODATE") == "20260630"
+    assert root.find(sv + "SVFROMDATE").get("TYPE") == "Date"
+    assert root.find(sv + "SVTODATE").get("TYPE") == "Date"
     fetches = [f.text for f in root.findall("BODY/DESC/FETCHLIST/FETCH")]
     assert {"DATE", "VOUCHERNUMBER", "VOUCHERTYPENAME", "PARTYLEDGERNAME"} <= set(fetches)
     assert {"ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"} <= set(fetches)
@@ -102,6 +104,15 @@ def test_bounded_voucher_collection_uses_date_filter_and_nested_fetches() -> Non
     system = root.find("BODY/DESC/TDL/TDLMESSAGE/SYSTEM[@NAME='TalaiVoucherDate']")
     assert system is not None
     assert system.text == "$Date >= ##SVFromDate AND $Date <= ##SVToDate"
+
+
+def test_untyped_voucher_dates_are_not_the_bounded_request_shape() -> None:
+    xml = env.voucher_collection(date(2026, 6, 1), date(2026, 6, 30)).replace(
+        ' TYPE="Date"', ""
+    )
+    root = parse(xml)
+    assert root.find("BODY/DESC/STATICVARIABLES/SVFROMDATE").get("TYPE") is None
+    assert root.find("BODY/DESC/STATICVARIABLES/SVTODATE").get("TYPE") is None
 
 
 def test_bounded_voucher_collection_rejects_reversed_range() -> None:

@@ -197,6 +197,15 @@ class FakeTallyTransport:
             "$Date >= ##SVFromDate AND $Date <= ##SVToDate"
         ):
             return False
+        from_node = root.find("BODY/DESC/STATICVARIABLES/SVFROMDATE")
+        to_node = root.find("BODY/DESC/STATICVARIABLES/SVTODATE")
+        if (
+            from_node is None
+            or to_node is None
+            or from_node.get("TYPE") != "Date"
+            or to_node.get("TYPE") != "Date"
+        ):
+            return False
         try:
             from_date, to_date = cls._date_window(root)
         except ValueError:
