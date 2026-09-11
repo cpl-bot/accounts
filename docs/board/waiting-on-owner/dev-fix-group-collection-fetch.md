@@ -1,6 +1,5 @@
 ---
 id: dev-fix-group-collection-fetch
-owner: "@orchestrator"
 type: bug
 created: 2026-09-11
 size: S
@@ -85,3 +84,65 @@ Implementation landed. Full `groups()` pulls now use `List of Groups`; delta pul
 ## Waiting on owner
 
 Run `tally object --subtype Group` against the office Tally instance and compare its fields with the replica rows for the listed non-root groups. The executor could not run that CLI in its environment, so acceptance criterion 5 remains open despite the read-only masters pull succeeding.
+
+## Answer from owner
+
+Advance to Employee
+     Advance to Suppliers
+     AWL AGRI BUSINESS LIMITED
+     Bank Accounts
+     Bank OD A/c
+     Berger Paints
+     Branch / Divisions
+     Brand Nourish
+     Capital Account
+     Cash-in-Hand
+     CRI Pumps Pvt.Ltd.
+     Current Assets
+     Current Liabilities
+     Deposits (Asset)
+     Digital Expenses
+     Direct Expenses
+     Direct Incomes
+     Duties &amp; Taxes
+     Expense Payable
+     Fixed Assets
+     Gst Cash Ledger
+     GST LIABILITY
+     GUJARAT TEA PROCESSORS &amp; PACKERS LTD
+     Hard Disk
+     Hella Infra Market
+     HERO REALTY PVT LTD
+     Indirect Expenses
+     Indirect Incomes
+     Interest Expenses
+     Investments
+     Jubliant
+     KSB Limited
+     Loans (Liability)
+     Loans &amp; Advances (Asset)
+     Lubi Industries LLP
+     Luminous Power Technologies Pvt.Ltd.
+     Misc. Expenses (ASSET)
+     Morter
+     MP Birla
+     Provisions
+     Purchase Accounts
+     Reserves &amp; Surplus
+     REVERSE CHARGE CASH LEDGER
+     Salary A/c
+     Salary Payable
+     Sales Accounts
+     SCHAEFFLER INDIA LIMITED
+     Secured Loans
+     SHREE CEMENT LIMITED
+     Stock-in-Hand
+     Sundry Creditors
+     Sundry Debtors
+     Suspense A/c
+     TDS
+     TDS 194H Payable
+     Unsecured Loans
+     WALKAROO INTERNATIONAL PVT LTD
+     Wonder Cement Ltd
+     Wonder Wallcare Pvt.Ltd.
