@@ -188,6 +188,44 @@ class TestBills:
         assert first.direction == "payable"
         assert bills[1].pending_amount == Decimal("4000.00")
 
+    def test_owner_payable_fixture_parses_flat_bill_records(self) -> None:
+        fixture = (
+            Path(__file__).parents[3]
+            / "docs"
+            / "board"
+            / "fixtures"
+            / "fixture2_bills_payable_anon.xml"
+        )
+        bills = P.parse_bills(fixture.read_text(encoding="utf-8"), direction="payable")
+        assert len(bills) == 1172
+        first = bills[0]
+        assert first.party_ledger == "Party 001 (5E4CE4)"
+        assert first.bill_name == "del4-2906022"
+        assert first.bill_date == date(2021, 4, 1)
+        assert first.due_date == date(2021, 4, 1)
+        assert first.opening_amount == Decimal("10795.96")
+        assert first.pending_amount == Decimal("10795.96")
+        assert all(b.direction == "payable" and b.bill_name for b in bills)
+
+    def test_owner_receivable_fixture_preserves_signed_pending_amount(self) -> None:
+        fixture = (
+            Path(__file__).parents[3]
+            / "docs"
+            / "board"
+            / "fixtures"
+            / "fixture2_bills_receivable_anon.xml"
+        )
+        bills = P.parse_bills(fixture.read_text(encoding="utf-8"), direction="receivable")
+        assert len(bills) == 1131
+        first = bills[0]
+        assert first.party_ledger == "Party 001 (C4D93A)"
+        assert first.bill_name == "DL1212203BW86603"
+        assert first.bill_date == date(2022, 3, 30)
+        assert first.due_date == date(2022, 3, 30)
+        assert first.opening_amount == Decimal("21634.35")
+        assert first.pending_amount == Decimal("21634.35")
+        assert all(b.direction == "receivable" for b in bills)
+
 
 class TestImportResult:
     def test_success(self, fixture_xml) -> None:

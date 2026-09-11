@@ -228,11 +228,12 @@ class TallyClient:
         xml = env.stock_summary_report(as_on, company=self.company)
         return self._send(xml, "report:Stock Summary", P.parse_stock_valuation)
 
-    def bills(self, direction: str) -> list[P.BillRow]:
+    def bills(self, direction: str, as_on: date | None = None) -> list[P.BillRow]:
+        as_on = as_on or date.today()
         report_name = "Bills Payable" if direction == "payable" else "Bills Receivable"
-        xml = env.report(report_name, company=self.company)
+        xml = env.data(report_name, company=self.company, to_date=as_on)
         return self._send(
-            xml, f"report:{report_name}", lambda r: P.parse_bills(r, direction=direction)
+            xml, f"data:{report_name}", lambda r: P.parse_bills(r, direction=direction)
         )
 
     def find_voucher_by_remote_id(self, remote_id: str, voucher_date: date) -> P.VoucherRow | None:

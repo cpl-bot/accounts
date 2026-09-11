@@ -125,6 +125,17 @@ class FakeTallyTransport:
         request_type = (root.findtext("HEADER/TYPE") or "").strip()
         if request_type == "Report" and request_id == "Day Book":
             return _failure("Unsupported Request", "Day Book report is unsupported")
+        if request_id in {"Bills Payable", "Bills Receivable"}:
+            if request_type == "Report":
+                return _failure(
+                    "Unsupported Request",
+                    f"{request_id} requires TYPE=Data",
+                )
+            if request_type != "Data" or not self._is_bill_data_request(root):
+                return _failure(
+                    "Invalid Request",
+                    f"{request_id} Data requests require a date-typed SVTODATE",
+                )
         collection_type = root.findtext("BODY/DESC/TDL/TDLMESSAGE/COLLECTION/TYPE")
         name = (collection_type or request_id).strip()
         if name.startswith("Talai"):
@@ -191,6 +202,13 @@ class FakeTallyTransport:
         except ValueError:
             return False
         return from_date <= to_date
+
+    @staticmethod
+    def _is_bill_data_request(root: Element) -> bool:
+        from .parsers import to_date
+
+        as_on = root.find("BODY/DESC/STATICVARIABLES/SVTODATE")
+        return as_on is not None and as_on.get("TYPE") == "Date" and to_date(as_on.text) is not None
 
     @staticmethod
     def _as_on(root: Element) -> date:

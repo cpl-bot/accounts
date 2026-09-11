@@ -96,6 +96,15 @@ class TestFakeTransportExports:
         with pytest.raises(TallyResponseError, match="Day Book report is unsupported"):
             P.parse_xml(P.decode_response(fake_transport.send(env.report("Day Book"))))
 
+    def test_bill_report_is_rejected_in_favour_of_data_request(
+        self, fake_transport: FakeTallyTransport
+    ) -> None:
+        from talai_middleware.tally import envelopes as env
+        from talai_middleware.tally.errors import TallyResponseError
+
+        with pytest.raises(TallyResponseError, match="Bills Payable.*Data"):
+            P.parse_xml(P.decode_response(fake_transport.send(env.report("Bills Payable"))))
+
     def test_bounded_voucher_collection_is_filtered_by_fake(self) -> None:
         from datetime import date
 

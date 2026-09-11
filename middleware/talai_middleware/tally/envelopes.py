@@ -178,6 +178,27 @@ def report(
     return _envelope(_header("Export", "Report", name), body)
 
 
+def data(
+    name: str,
+    company: str | None = None,
+    to_date: date | None = None,
+) -> str:
+    """Export a Tally Data report, optionally as of one date.
+
+    Tally's Data contract uses a date-typed ``SVTODATE`` for point-in-time
+    reports.  No ``SVFROMDATE`` is emitted so older open bills are retained.
+    """
+    parts = [
+        "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>",
+    ]
+    if company:
+        parts.append(_tag("SVCURRENTCOMPANY", company))
+    if to_date:
+        parts.append(f'<SVTODATE TYPE="Date">{fmt_date(to_date)}</SVTODATE>')
+    body = "<DESC><STATICVARIABLES>" + "".join(parts) + "</STATICVARIABLES></DESC>"
+    return _envelope(_header("Export", "Data", name), body)
+
+
 def stock_summary_report(as_on: date, company: str | None = None) -> str:
     """Export Tally's **Stock Summary** as on one date (plan §3.9).
 

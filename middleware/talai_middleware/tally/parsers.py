@@ -144,7 +144,7 @@ def to_date(value: str | None) -> date | None:
     if not value:
         return None
     cleaned = value.strip()
-    for fmt in ("%Y%m%d", "%d-%m-%Y", "%d-%b-%Y", "%Y-%m-%d"):
+    for fmt in ("%Y%m%d", "%d-%m-%Y", "%d-%b-%Y", "%d-%b-%y", "%Y-%m-%d"):
         try:
             return datetime.strptime(cleaned, fmt).date()
         except ValueError:
@@ -345,37 +345,70 @@ def _voucher_amount(entries: list[VoucherLedgerEntry], party: str) -> Decimal:
     return debits
 
 
-BILL_TAGS = ("BILLS", "BILLFIXED", "BILL")
-
-
 def parse_bills(source: str | Element, direction: str) -> list[BillRow]:
     """Open bill references from a Bills Payable / Bills Receivable export.
 
     ``direction`` is ``payable`` or ``receivable``; Tally does not label the rows
     so the caller must say which report it asked for.
     """
+    root = _root(source)
     rows: list[BillRow] = []
-    for node in _iter(_root(source), *BILL_TAGS):
-        name = _name_of(node) or (node.findtext("BILLREF") or "").strip()
-        if not name:
-            continue
-        opening = to_decimal(node.findtext("OPENINGBALANCE"), Decimal("0")) or Decimal("0")
-        pending = to_decimal(node.findtext("CLOSINGBALANCE"), opening) or Decimal("0")
-        rows.append(
-            BillRow(
-                party_ledger=(
-                    node.findtext("PARTYLEDGERNAME") or node.findtext("LEDGERNAME") or ""
-                ).strip(),
-                bill_name=name,
-                direction=direction,
-                bill_date=to_date(node.findtext("BILLDATE") or node.findtext("DATE")),
-                due_date=to_date(
-                    node.findtext("BILLDUEDATE") or node.findtext("BILLCREDITPERIOD")
-                ),
-                opening_amount=abs(opening),
-                pending_amount=abs(pending),
+    for node in _iter(root, "BILLS", "BILL"):
+        row = _bill_row(node, direction)
+        if row is not None:
+            rows.append(row)
+    rows.extend(_parse_flat_bills(root, direction))
+    return rows
+
+
+def _bill_row(node: Element, direction: str) -> BillRow | None:
+    name = _name_of(node) or (node.findtext("BILLREF") or "").strip()
+    if not name:
+        return None
+    opening = to_decimal(node.findtext("OPENINGBALANCE"), Decimal("0")) or Decimal("0")
+    pending = to_decimal(node.findtext("CLOSINGBALANCE"), opening) or Decimal("0")
+    return BillRow(
+        party_ledger=(
+            node.findtext("PARTYLEDGERNAME") or node.findtext("LEDGERNAME") or ""
+        ).strip(),
+        bill_name=name,
+        direction=direction,
+        bill_date=to_date(node.findtext("BILLDATE") or node.findtext("DATE")),
+        due_date=to_date(node.findtext("BILLDUEDATE") or node.findtext("BILLCREDITPERIOD")),
+        opening_amount=abs(opening),
+        pending_amount=abs(pending),
+    )
+
+
+def _parse_flat_bills(root: Element, direction: str) -> list[BillRow]:
+    """Parse Tally Data exports with BILLFIXED and sibling value elements."""
+    rows: list[BillRow] = []
+    for parent in root.iter():
+        children = list(parent)
+        for index, node in enumerate(children):
+            if node.tag != "BILLFIXED":
+                continue
+            values: dict[str, str | None] = {}
+            for sibling in children[index + 1 :]:
+                if sibling.tag == "BILLFIXED":
+                    break
+                if sibling.tag in {"BILLCL", "BILLDUE", "BILLOVERDUE"}:
+                    values.setdefault(sibling.tag, sibling.text)
+            name = (node.findtext("BILLREF") or "").strip()
+            if not name:
+                continue
+            pending = to_decimal(values.get("BILLCL"), Decimal("0")) or Decimal("0")
+            rows.append(
+                BillRow(
+                    party_ledger=(node.findtext("BILLPARTY") or "").strip(),
+                    bill_name=name,
+                    direction=direction,
+                    bill_date=to_date(node.findtext("BILLDATE")),
+                    due_date=to_date(values.get("BILLDUE")),
+                    opening_amount=abs(pending),
+                    pending_amount=abs(pending),
+                )
             )
-        )
     return rows
 
 

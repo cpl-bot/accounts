@@ -59,9 +59,20 @@ def test_delta_by_alter_id(tally: TallyClient) -> None:
 def test_day_book_and_bills(tally: TallyClient) -> None:
     vouchers = tally.day_book(date(2026, 6, 1), date(2026, 6, 30))
     assert vouchers, "expected the fake Voucher collection to return vouchers"
-    payable = tally.bills("payable")
+    payable = tally.bills("payable", as_on=date(2026, 9, 11))
     assert all(b.direction == "payable" for b in payable)
     assert sum(b.pending_amount for b in payable) > Decimal("0")
+
+
+def test_bills_use_data_request_with_explicit_as_of_date(
+    tally: TallyClient, fake_transport: FakeTallyTransport
+) -> None:
+    tally.bills("receivable", as_on=date(2026, 9, 11))
+    request = fake_transport.requests[-1]
+    assert "<TYPE>Data</TYPE>" in request
+    assert "<ID>Bills Receivable</ID>" in request
+    assert '<SVTODATE TYPE="Date">20260911</SVTODATE>' in request
+    assert "<SVFROMDATE" not in request
 
 
 def test_day_book_rejects_reversed_range_before_network_io(

@@ -318,3 +318,21 @@ def test_failed_bills_scope_preserves_previous_snapshot(db, settings) -> None:
     still_there = repo.list_bills(session, "payable")
     assert len(still_there) == len(prior_payable)
     session.close()
+
+
+def test_failed_receivable_direction_preserves_its_previous_snapshot(db, settings) -> None:
+    session = db.new_session()
+    good_client = TallyClient(FakeTallyTransport(), company="Acme Foods Pvt Ltd")
+    SyncPuller(session, good_client, settings).run(["bills"])
+    session.commit()
+    prior_receivable = repo.list_bills(session, "receivable")
+    assert prior_receivable
+
+    bad_client = TallyClient(
+        FakeTallyTransport(plain_text_error_on={"Bills Receivable"}),
+        company="Acme Foods Pvt Ltd",
+    )
+    runs = SyncPuller(session, bad_client, settings).run(["bills"])
+    assert runs[0].status == "failed"
+    assert repo.list_bills(session, "receivable") == prior_receivable
+    session.close()

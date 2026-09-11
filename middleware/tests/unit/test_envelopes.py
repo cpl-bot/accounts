@@ -116,6 +116,20 @@ def test_report_envelope() -> None:
     assert text(root, "BODY/DESC/STATICVARIABLES/SVTODATE") == "20260630"
 
 
+def test_bill_data_envelope_uses_an_as_of_date_without_a_lower_bound() -> None:
+    root = parse(env.data("Bills Payable", company="Acme", to_date=date(2026, 9, 11)))
+    assert text(root, "HEADER/TALLYREQUEST") == "Export"
+    assert text(root, "HEADER/TYPE") == "Data"
+    assert text(root, "HEADER/ID") == "Bills Payable"
+    sv = root.find("BODY/DESC/STATICVARIABLES")
+    assert sv is not None
+    assert sv.find("SVFROMDATE") is None
+    as_on = sv.find("SVTODATE")
+    assert as_on is not None
+    assert as_on.get("TYPE") == "Date"
+    assert as_on.text == "20260911"
+
+
 def test_escapes_ampersand_in_company_name() -> None:
     xml = env.collection("Ledger", company="A & B Enterprises")
     assert "&amp;" in xml
