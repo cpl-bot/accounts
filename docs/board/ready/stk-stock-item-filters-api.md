@@ -5,6 +5,7 @@ type: feature
 created: 2026-09-11
 size: XS
 lane: tally-read-path
+priority: 20
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # GET /stock-items has no filters at all

@@ -5,6 +5,7 @@ type: feature
 created: 2026-09-11
 size: S
 lane: tally-read-path
+priority: 60
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # No Stock Group, Stock Category, or Unit master tables

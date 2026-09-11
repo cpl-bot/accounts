@@ -5,6 +5,7 @@ type: feature
 created: 2026-09-11
 size: XS
 lane: tally-read-path
+priority: 70
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # GET /vouchers has no way to look a voucher up by its Tally voucher number

@@ -88,3 +88,11 @@ pushes to Tally, the main checkout, destructive operations.
 
 Out of scope: historical balances predating the company's Tally data (1-Apr-23
 per the company name), any write/import path, changing A8.
+
+## Needs owner decision
+
+Choose the point-in-time balance architecture: dated Tally-backed snapshots or
+reconstruction from a guaranteed-complete voucher history. State the required
+coverage guarantee, freshness expectation, and acceptable behavior outside
+that coverage. Financial-statement and ledger-statement cards remain sequenced
+until this decision is recorded.

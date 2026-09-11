@@ -5,6 +5,7 @@ type: bug
 created: 2026-09-11
 size: M
 lane: tally-read-path
+priority: 90
 doc: docs/TALLY_INTEGRATION_NOTES.md
 after: [dev-fix-group-collection-fetch]
 ---

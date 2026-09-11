@@ -5,6 +5,7 @@ type: bug
 created: 2026-09-11
 size: M
 lane: tally-read-path
+priority: 50
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # Ledger masters pull drops opening balance, GSTIN, address, mailing name, state, and GUID/MASTERID/ALTERID for every ledger

@@ -5,6 +5,7 @@ type: feature
 created: 2026-09-11
 size: S
 lane: tally-read-path
+priority: 100
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # GET /ledgers has no closing-balance threshold filter or a group-wise balance summary

@@ -5,6 +5,7 @@ type: feature
 created: 2026-09-11
 size: S
 lane: tally-read-path
+priority: 110
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # Stock item detail is missing opening qty/rate/value

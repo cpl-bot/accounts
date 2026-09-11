@@ -1,5 +1,6 @@
 ---
 id: fix-the-middleware-for-correct-data
+owner: owner
 type: bug
 created: 2026-09-11
 ---
@@ -23,3 +24,11 @@ Fix the middleware for correct data so that next js app reflects the correct num
   Net Profit (add indirect income, subtract indirect exp) works out ≈ ₹30,58,186.68 for same period, if useful.
 
 ![shot](docs/board-assets/20260911-140500-1cb8.png)
+
+## Needs owner decision
+
+Specify the dashboard period, authoritative Tally report/formula, expected
+displayed fields and values, and whether the settled A8 dashboard formula may
+change. Also identify the screenshot's currently observed values. The quoted
+figures conflict with the already reconciled dashboard outcome, so this card
+cannot safely become an implementation task without that ruling.

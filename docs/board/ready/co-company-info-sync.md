@@ -5,6 +5,7 @@ type: bug
 created: 2026-09-11
 size: M
 lane: tally-read-path
+priority: 40
 doc: docs/TALLY_INTEGRATION_NOTES.md
 ---
 # Company info (name, financial year) is neither fetched correctly nor persisted
