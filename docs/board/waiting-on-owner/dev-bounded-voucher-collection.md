@@ -27,3 +27,14 @@ Do not own: bill parser/request work, dashboard/frontend files, database schema,
 Out of scope: unbounded fiscal-year exports, voucher import/write behavior, REMOTEID read-back, and redesigning aggregate formulas.
 
 Depends on: `dev-reject-tally-protocol-errors`, `debug-live-voucher-export-shape`.
+
+## Implementation landed (2026-09-11)
+
+- Voucher pulls now use a derived, server-date-filtered `TalaiVoucher` collection.
+- Reversed ranges fail before network I/O; the existing client-side date filter remains defense in depth.
+- REMOTEID read-back queries the fiscal year containing the imported voucher date, including a backdated regression test.
+- Middleware Ruff and pytest passed independently (383 tests).
+
+## Waiting on owner
+
+Run one read-only bounded pull against the office Tally and confirm voucher rows and ledger entries persist for the requested date range.
