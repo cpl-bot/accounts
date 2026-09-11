@@ -110,7 +110,9 @@ def collection(
     which is the documented way to filter a collection export.
     """
     desc = [_static_variables(company, from_date, to_date), _fetchlist(fetch)]
-    request_id = name
+    # Tally treats the native ``Group`` collection ID as a reserved shape that
+    # ignores FETCHLIST. ``List of Groups`` returns the requested fields.
+    request_id = "List of Groups" if name == "Group" and not filters else name
     if filters:
         request_id = f"Talai{name.replace(' ', '')}"
         fetch_tdl = "".join(f"<FETCH>{escape(f)}</FETCH>" for f in (fetch or []))

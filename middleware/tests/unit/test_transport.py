@@ -68,6 +68,18 @@ class TestFakeTransportExports:
         ledgers = P.parse_ledgers(fake_transport.send(env.collection("Ledger")))
         assert "BioShield Medical & Co" in [ledger.name for ledger in ledgers]
 
+    def test_bare_group_collection_does_not_return_fetchlist_fields(
+        self, fake_transport: FakeTallyTransport
+    ) -> None:
+        from talai_middleware.tally import envelopes as env
+
+        bare_group_xml = env.collection("Group").replace(
+            "<ID>List of Groups</ID>", "<ID>Group</ID>"
+        )
+        groups = P.parse_groups(fake_transport.send(bare_group_xml))
+        assert groups
+        assert all(not group.parent and not group.affects_gross_profit for group in groups)
+
     def test_unknown_collection_returns_status_zero(
         self, fake_transport: FakeTallyTransport
     ) -> None:

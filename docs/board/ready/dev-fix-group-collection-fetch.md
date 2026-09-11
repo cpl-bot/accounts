@@ -66,3 +66,10 @@ Expenses — deliberately narrower than Tally's own Trading-account P&L, which
 also folds in Direct Incomes. That gap between Talai's gross profit and
 Tally's own P&L figure is intended, not a bug; this card only fixes what
 lands in the `groups` table.
+
+## Completion note (2026-09-11)
+
+- Full group pulls now request `List of Groups`; delta pulls continue to request the derived `TalaiGroup` collection. The fake returns incomplete native fields for bare `Group` and the full field set only for the corrected forms.
+- `stock_items`, `cost_centres`, `godowns`, and `voucher_types` were checked with the same client against the LAN Tally instance. They returned 433, 0, 1, and 25 rows respectively; no corresponding bare-name field-loss symptom was observed.
+- Read-only LAN masters pull succeeded: 2,309 records seen, 59 groups stored. Spot checks include nested groups `AWL AGRI BUSINESS LIMITED` -> `Sundry Debtors`, `Berger Paints` -> `Sundry Debtors`, `CRI Pumps Pvt.Ltd.` -> `Sundry Debtors`, and `Digital Expenses` -> `Indirect Expenses`.
+- The validator's bill reconciliation could not run because this instance returned plain-text `Unknown Request` for both bill directions. The `tally object --subtype Group` CLI was unavailable in this environment, so the final CLI-vs-replica spot-check remains an owner-side production verification item.

@@ -141,7 +141,10 @@ class FakeTallyTransport:
             "company": self._companies,
             "listofcompanies": self._companies,
             "ledger": self._ledgers,
-            "group": self._groups,
+            "group": lambda floor: self._groups(
+                floor, full_fields=bool(collection_type) or request_id == "List of Groups"
+            ),
+            "listofgroups": lambda floor: self._groups(floor, full_fields=True),
             "stockitem": self._stock_items,
             "costcentre": self._cost_centres,
             "godown": self._godowns,
@@ -226,15 +229,22 @@ class FakeTallyTransport:
         )
         return f"<COLLECTION>{rows}</COLLECTION>"
 
-    def _groups(self, min_alter_id: int) -> str:
+    def _groups(self, min_alter_id: int, *, full_fields: bool = True) -> str:
         rows = "".join(
             f'<GROUP NAME="{escape(g.name)}">'
             + _tag("NAME", g.name)
-            + _tag("PARENT", g.parent)
-            + _tag("PRIMARYGROUP", g.primary_group)
-            + _tag("ISREVENUE", "Yes" if g.is_revenue else "No")
-            + _tag("AFFECTSGROSSPROFIT", "Yes" if g.affects_gross_profit else "No")
-            + _tag("ALTERID", g.alter_id)
+            + (
+                _tag("PARENT", g.parent)
+                + _tag("PRIMARYGROUP", g.primary_group)
+                + _tag("ISREVENUE", "Yes" if g.is_revenue else "No")
+                + _tag("ISDEEMEDPOSITIVE", "No")
+                + _tag("AFFECTSGROSSPROFIT", "Yes" if g.affects_gross_profit else "No")
+                + _tag("MASTERID", 100 + self.state.groups.index(g))
+                + _tag("ALTERID", g.alter_id)
+                + _tag("GUID", f"fake-group-{self.state.groups.index(g) + 1:04d}")
+                if full_fields
+                else ""
+            )
             + "</GROUP>"
             for g in self.state.groups
             if g.alter_id > min_alter_id

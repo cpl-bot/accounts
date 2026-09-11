@@ -58,6 +58,12 @@ def test_collection_with_fetch_company_and_dates() -> None:
     ]
 
 
+def test_group_collection_uses_fetchlist_respecting_name() -> None:
+    root = parse(env.collection("Group", fetch=["NAME", "PARENT"]))
+    assert text(root, "HEADER/ID") == "List of Groups"
+    assert [f.text for f in root.findall("BODY/DESC/FETCHLIST/FETCH")] == ["NAME", "PARENT"]
+
+
 def test_collection_with_filters_builds_tdl_collection() -> None:
     xml = env.collection(
         "Ledger", fetch=["NAME"], filters=[("TalaiAlterId", "$AlterID > 42")]

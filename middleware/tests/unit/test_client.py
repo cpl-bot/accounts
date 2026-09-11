@@ -37,6 +37,18 @@ def test_masters_are_typed(tally: TallyClient) -> None:
     assert "Purchase" in [v.name for v in tally.voucher_types()]
 
 
+def test_group_full_and_delta_pulls_use_fetchlist_respecting_requests(
+    tally: TallyClient, fake_transport: FakeTallyTransport
+) -> None:
+    groups = tally.groups()
+    assert any(group.parent for group in groups)
+    assert any(group.affects_gross_profit for group in groups)
+    assert "<ID>List of Groups</ID>" in fake_transport.requests[-1]
+
+    tally.groups(since_alter_id=1)
+    assert "<ID>TalaiGroup</ID>" in fake_transport.requests[-1]
+
+
 def test_delta_by_alter_id(tally: TallyClient) -> None:
     all_ledgers = tally.ledgers()
     newest = max(led.alter_id or 0 for led in all_ledgers)
