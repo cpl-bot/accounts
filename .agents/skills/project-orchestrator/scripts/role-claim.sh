@@ -6,9 +6,10 @@ usage() {
   cat <<'USAGE'
 Usage:
   role-claim.sh claim --assigned-by owner|handoff|integrator \
-    --harness claude|codex|prime-agent [--mode interactive|headless|daemon]
+    --harness claude|codex|prime-agent|opencode [--mode interactive|headless|daemon] \
+    [--model MODEL]
   role-claim.sh status
-  role-claim.sh transfer --harness claude|codex|prime-agent \
+  role-claim.sh transfer --harness claude|codex|prime-agent|opencode \
     --to-workspace ID --to-surface ID [--mode interactive|headless|daemon] \
     [--claim-id ID]
   role-claim.sh release [--claim-id ID] [--force]
@@ -29,6 +30,7 @@ if [ "$#" -gt 0 ]; then shift; fi
 assigned_by=""
 harness=""
 mode="interactive"
+model=""
 provided_claim_id="${ORCHESTRATOR_CLAIM_ID:-}"
 force_release=0
 to_workspace=""
@@ -46,6 +48,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --mode)
       mode="${2:-}"
+      shift 2
+      ;;
+    --model)
+      model="${2:-}"
       shift 2
       ;;
     --claim-id)
@@ -134,9 +140,9 @@ case "$command_name" in
     esac
 
     case "$harness" in
-      claude|codex|prime-agent) ;;
+      claude|codex|prime-agent|opencode) ;;
       *)
-        echo "Claim requires --harness claude, codex, or prime-agent." >&2
+        echo "Claim requires --harness claude, codex, prime-agent, or opencode." >&2
         exit 2
         ;;
     esac
@@ -189,6 +195,8 @@ case "$command_name" in
       printf 'claim_id=%s\n' "$claim_id"
       printf 'assigned_by=%s\n' "$assigned_by"
       printf 'harness=%s\n' "$harness"
+      [ -n "$model" ] && printf 'model=%s\n' "$model"
+      [ -n "${OPENCODE_SESSION_ID:-}" ] && printf 'session_id=%s\n' "$OPENCODE_SESSION_ID"
       printf 'mode=%s\n' "$mode"
       printf 'workspace=%s\n' "$claim_workspace"
       printf 'surface=%s\n' "$claim_surface"
@@ -216,9 +224,9 @@ case "$command_name" in
     }
 
     case "$harness" in
-      claude|codex|prime-agent) ;;
+      claude|codex|prime-agent|opencode) ;;
       *)
-        echo "Transfer requires --harness claude, codex, or prime-agent." >&2
+        echo "Transfer requires --harness claude, codex, prime-agent, or opencode." >&2
         exit 2
         ;;
     esac
@@ -255,6 +263,7 @@ case "$command_name" in
       printf 'previous_claim_id=%s\n' "$previous_claim_id"
       printf 'assigned_by=handoff\n'
       printf 'harness=%s\n' "$harness"
+      [ -n "$model" ] && printf 'model=%s\n' "$model"
       printf 'mode=%s\n' "$mode"
       printf 'workspace=%s\n' "$to_workspace"
       printf 'surface=%s\n' "$to_surface"

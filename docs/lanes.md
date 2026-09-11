@@ -8,5 +8,6 @@ Claims were skipped once on the origin project and sessions collided; do not ski
 
 ## Current lanes
 
-| Lane | Worktree | Owns | Status |
-|---|---|---|---|
+| Lane | Harness | Model | Session | Worktree | Owns | Status |
+|---|---|---|---|---|---|---|
+| reject-tally-protocol-errors | opencode | opencode-go/qwen3.7-plus | `<will-fill>` | `/Users/admin/Documents/accounts-wt/reject-tally-protocol-errors` | `middleware/talai_middleware/tally/{parsers,client,fake}.py`, focused middleware tests | active |
