@@ -11,4 +11,4 @@ Claims were skipped once on the origin project and sessions collided; do not ski
 | Lane | Harness | Model | Session | Worktree | Owns | Status |
 |---|---|---|---|---|---|---|
 | reject-tally-protocol-errors | opencode | opencode/muse-spark-1.3-contributor-free | `ses_f70c0455fffezDZSGBRrdHrW6K` | `/Users/admin/Documents/accounts-wt/reject-tally-protocol-errors` | `middleware/talai_middleware/tally/{parsers,client,fake}.py`, focused middleware tests | landed |
-| fix-group-collection-fetch | opencode | openai/gpt-5.6-luna | `pending` | `/Users/admin/Documents/accounts-wt/fix-group-collection-fetch` | `middleware/talai_middleware/tally/{envelopes,client,fake}.py`, focused middleware tests | active |
+| fix-group-collection-fetch | opencode | openai/gpt-5.6-luna | `opencode` | `/Users/admin/Documents/accounts-wt/fix-group-collection-fetch` | `middleware/talai_middleware/tally/{envelopes,client,fake}.py`, focused middleware tests | active |
