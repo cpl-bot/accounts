@@ -10,4 +10,4 @@ Claims were skipped once on the origin project and sessions collided; do not ski
 
 | Lane | Harness | Model | Session | Worktree | Owns | Status |
 |---|---|---|---|---|---|---|
-| reject-tally-protocol-errors | opencode | opencode/muse-spark-1.3-contributor-free | `<will-fill>` | `/Users/admin/Documents/accounts-wt/reject-tally-protocol-errors` | `middleware/talai_middleware/tally/{parsers,client,fake}.py`, focused middleware tests | active |
+| reject-tally-protocol-errors | opencode | opencode/muse-spark-1.3-contributor-free | `ses_f70c0455fffezDZSGBRrdHrW6K` | `/Users/admin/Documents/accounts-wt/reject-tally-protocol-errors` | `middleware/talai_middleware/tally/{parsers,client,fake}.py`, focused middleware tests | active |
