@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -62,8 +63,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Self-test against the in-process fake Tally instead of the LAN",
     )
+    parser.add_argument(
+        "--from-date",
+        type=parse_date,
+        help="Voucher pull start date (YYYY-MM-DD; must be paired with --to-date)",
+    )
+    parser.add_argument(
+        "--to-date",
+        type=parse_date,
+        help="Voucher pull end date (YYYY-MM-DD; must be paired with --from-date)",
+    )
     parser.add_argument("--skip-migrate", action="store_true")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if (args.from_date is None) != (args.to_date is None):
+        parser.error("--from-date and --to-date must be provided together")
+    if args.from_date and args.from_date > args.to_date:
+        parser.error("--from-date must not be after --to-date")
+    return args
+
+
+def parse_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected a date in YYYY-MM-DD format") from exc
 
 
 def run_migrations() -> int:
@@ -108,15 +131,18 @@ def main(argv: list[str] | None = None) -> int:
             f"\n== pulling {', '.join(scopes)} from "
             f"{'the fake Tally' if args.fake else settings.tally_url}"
         )
-        runs = SyncPuller(session, client, settings).run(scopes)
+        runs = SyncPuller(session, client, settings).run(
+            scopes, from_date=args.from_date, to_date=args.to_date
+        )
         session.commit()
         for run in runs:
             print(
                 f"   {run.scope:10} status={run.status} "
                 f"seen={run.records_seen} changed={run.records_changed}"
             )
-            if run.error:
-                print(f"   error: {run.error}")
+            if run.status != "success":
+                if run.error:
+                    print(f"   error: {run.error}")
                 problems.append(f"the {run.scope} pull run failed")
 
         print("\n== row counts")

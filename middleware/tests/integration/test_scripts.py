@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -108,6 +109,99 @@ class TestSeedAndValidate:
         finally:
             validate.Settings = monkey_settings
         assert "All checks reconciled" in capsys.readouterr().out
+
+    def test_bounded_dates_are_forwarded_to_the_pull(self, tmp_path, monkeypatch) -> None:
+        url = f"sqlite:///{tmp_path / 'demo.db'}"
+        validate = load("validate_db_sync")
+
+        class Patched(validate.Settings):
+            def __init__(self, **kwargs):
+                super().__init__(**{**kwargs, "database_url": url})
+
+        captured = {}
+
+        class RecordingPuller:
+            def __init__(self, session, client, settings):
+                pass
+
+            def run(self, scopes, *, from_date=None, to_date=None):
+                captured.update(
+                    scopes=scopes, from_date=from_date, to_date=to_date
+                )
+                return [
+                    SimpleNamespace(
+                        scope="vouchers",
+                        status="success",
+                        records_seen=0,
+                        records_changed=0,
+                        error=None,
+                    )
+                ]
+
+        monkeypatch.setattr(validate, "Settings", Patched)
+        monkeypatch.setattr(validate, "SyncPuller", RecordingPuller)
+        monkeypatch.setattr(validate, "reconcile", lambda *args: [])
+
+        assert validate.main(
+            [
+                "--fake",
+                "--skip-migrate",
+                "--scope",
+                "vouchers",
+                "--from-date",
+                "2026-04-01",
+                "--to-date",
+                "2026-09-10",
+            ]
+        ) == 0
+        assert captured == {
+            "scopes": ["vouchers"],
+            "from_date": validate.date(2026, 4, 1),
+            "to_date": validate.date(2026, 9, 10),
+        }
+
+    def test_date_bounds_require_a_valid_ordered_pair(self) -> None:
+        validate = load("validate_db_sync")
+
+        with pytest.raises(SystemExit):
+            validate.parse_args(["--from-date", "2026-04-01"])
+        with pytest.raises(SystemExit):
+            validate.parse_args(
+                ["--from-date", "2026-09-10", "--to-date", "2026-04-01"]
+            )
+        with pytest.raises(SystemExit):
+            validate.parse_args(
+                ["--from-date", "2026/04/01", "--to-date", "2026-09-10"]
+            )
+
+    def test_failed_sync_run_is_nonzero_without_error_detail(self, tmp_path, monkeypatch) -> None:
+        url = f"sqlite:///{tmp_path / 'demo.db'}"
+        validate = load("validate_db_sync")
+
+        class Patched(validate.Settings):
+            def __init__(self, **kwargs):
+                super().__init__(**{**kwargs, "database_url": url})
+
+        class FailedPuller:
+            def __init__(self, session, client, settings):
+                pass
+
+            def run(self, scopes, *, from_date=None, to_date=None):
+                return [
+                    SimpleNamespace(
+                        scope="vouchers",
+                        status="failed",
+                        records_seen=0,
+                        records_changed=0,
+                        error=None,
+                    )
+                ]
+
+        monkeypatch.setattr(validate, "Settings", Patched)
+        monkeypatch.setattr(validate, "SyncPuller", FailedPuller)
+        monkeypatch.setattr(validate, "reconcile", lambda *args: [])
+
+        assert validate.main(["--fake", "--skip-migrate", "--scope", "vouchers"]) == 1
 
     def test_dry_run_push_prints_xml_and_sends_nothing(self, tmp_path, capsys) -> None:
         url = f"sqlite:///{tmp_path / 'demo.db'}"
