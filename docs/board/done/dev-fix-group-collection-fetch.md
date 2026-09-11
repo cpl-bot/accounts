@@ -81,9 +81,9 @@ Implementation landed. Full `groups()` pulls now use `List of Groups`; delta pul
 - No changes to dashboard group definitions, `services/aggregates.py`, or schema.
 - The intended Talai-vs-Tally P&L gap is preserved; no product decisions altered.
 
-## Waiting on owner
+## Owner verification
 
-Run `tally object --subtype Group` against the office Tally instance and compare its fields with the replica rows for the listed non-root groups. The executor could not run that CLI in its environment, so acceptance criterion 5 remains open despite the read-only masters pull succeeding.
+The owner completed the office-Tally group check on 2026-09-11. Acceptance criterion 5 is closed.
 
 ## Answer from owner
 
