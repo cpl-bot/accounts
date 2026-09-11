@@ -22,3 +22,7 @@ Do not own: frontend or middleware code, tenant migrations, production data, liv
 Out of scope: implementing the selected label or adding multi-company support.
 
 Depends on: none.
+
+## product decision from owner
+`Nivana Healthcare Pvt. Ltd.` was just a placeholder example.
+Pick the company name from Tally and use the value in the section

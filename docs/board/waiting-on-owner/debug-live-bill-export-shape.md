@@ -23,3 +23,7 @@ Do not own: middleware implementation files, Tally configuration, production wri
 Out of scope: changing bill references, testing imports, guessing undocumented response tags, or implementing the production parser.
 
 Depends on: none.
+
+## input from owner:
+
+all required fixtures are in docs/board/fixtures/
