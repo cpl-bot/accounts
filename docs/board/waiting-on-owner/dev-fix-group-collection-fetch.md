@@ -73,3 +73,15 @@ lands in the `groups` table.
 - `stock_items`, `cost_centres`, `godowns`, and `voucher_types` were checked with the same client against the LAN Tally instance. They returned 433, 0, 1, and 25 rows respectively; no corresponding bare-name field-loss symptom was observed.
 - Read-only LAN masters pull succeeded: 2,309 records seen, 59 groups stored. Spot checks include nested groups `AWL AGRI BUSINESS LIMITED` -> `Sundry Debtors`, `Berger Paints` -> `Sundry Debtors`, `CRI Pumps Pvt.Ltd.` -> `Sundry Debtors`, and `Digital Expenses` -> `Indirect Expenses`.
 - The validator's bill reconciliation could not run because this instance returned plain-text `Unknown Request` for both bill directions. The `tally object --subtype Group` CLI was unavailable in this environment, so the final CLI-vs-replica spot-check remains an owner-side production verification item.
+
+---
+
+Implementation landed. Full `groups()` pulls now use `List of Groups`; delta pulls continue to use the derived `TalaiGroup` collection. Both preserve the requested FETCHLIST rather than using the bare `<ID>Group</ID>` export.
+
+- `stock_items`, `cost_centres`, `godowns`, `voucher_types` checked against the same failure mode — no matching field-loss symptom observed.
+- No changes to dashboard group definitions, `services/aggregates.py`, or schema.
+- The intended Talai-vs-Tally P&L gap is preserved; no product decisions altered.
+
+## Waiting on owner
+
+Run `tally object --subtype Group` against the office Tally instance and compare its fields with the replica rows for the listed non-root groups. The executor could not run that CLI in its environment, so acceptance criterion 5 remains open despite the read-only masters pull succeeding.
