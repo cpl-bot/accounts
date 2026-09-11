@@ -119,6 +119,59 @@ class TestUpsertVoucher:
 
 
 class TestPendingBills:
+    def test_list_bills_filters_party_case_insensitively(self, session) -> None:
+        repo.replace_bills(
+            session,
+            "payable",
+            [
+                {
+                    "party_ledger": "Acme Supplies",
+                    "bill_name": "ACME/1",
+                    "pending_amount": Decimal("100.00"),
+                },
+                {
+                    "party_ledger": "Other Vendor",
+                    "bill_name": "OTHER/1",
+                    "pending_amount": Decimal("200.00"),
+                },
+            ],
+        )
+        session.commit()
+
+        assert [b.bill_name for b in repo.list_bills(session, "payable", party="supplies")] == [
+            "ACME/1"
+        ]
+        assert repo.list_bills(session, "payable", party="missing") == []
+
+    def test_rank_bills_by_party_orders_amount_then_name_and_allows_empty_direction(
+        self, session
+    ) -> None:
+        repo.replace_bills(
+            session,
+            "payable",
+            [
+                {"party_ledger": "Zulu", "bill_name": "Z/1", "pending_amount": Decimal("300")},
+                {"party_ledger": "Alpha", "bill_name": "A/1", "pending_amount": Decimal("300")},
+                {"party_ledger": "Zulu", "bill_name": "Z/2", "pending_amount": Decimal("100")},
+            ],
+        )
+        repo.replace_bills(
+            session,
+            "receivable",
+            [{"party_ledger": "Customer", "bill_name": "C/1", "pending_amount": Decimal("500")}],
+        )
+        session.commit()
+
+        assert repo.rank_bills_by_party(session, "payable") == [
+            ("Zulu", Decimal("400.00"), 2),
+            ("Alpha", Decimal("300.00"), 1),
+        ]
+        assert repo.rank_bills_by_party(session, None) == [
+            ("Customer", Decimal("500.00"), 1),
+            ("Zulu", Decimal("400.00"), 2),
+            ("Alpha", Decimal("300.00"), 1),
+        ]
+
     def test_sum_pending_bills_honours_as_on_like_list_bills(self, session) -> None:
         repo.replace_bills(
             session,

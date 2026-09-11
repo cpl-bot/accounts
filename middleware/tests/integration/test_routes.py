@@ -89,6 +89,28 @@ class TestVouchersAndBills:
         ]
         assert float(body["total_pending"]) > 0
 
+    def test_bills_filter_and_party_ranking(self, client: TestClient) -> None:
+        pull_everything(client)
+        filtered = client.get("/api/v1/bills?party=bioshield").json()
+        assert {bill["party_ledger"] for bill in filtered["items"]} == {
+            "BioShield Medical & Co"
+        }
+        assert client.get("/api/v1/bills?party=does-not-exist").json()["items"] == []
+
+        ranking = client.get("/api/v1/bills/by-party?direction=payable").json()
+        assert ranking["items"] == [
+            {
+                "party_ledger": "BioShield Medical & Co",
+                "total_pending": "29875.00",
+                "open_bill_count": 2,
+            },
+            {
+                "party_ledger": "Sunrise Packaging",
+                "total_pending": "18880.00",
+                "open_bill_count": 1,
+            },
+        ]
+
     def test_bad_direction_is_rejected(self, client: TestClient) -> None:
         assert client.get("/api/v1/bills?direction=sideways").status_code == 422
 

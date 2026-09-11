@@ -386,7 +386,10 @@ def replace_bills(session: Session, direction: str, rows: Sequence[dict]) -> int
 
 
 def _open_bills_filter(
-    stmt: Select, direction: str | None = None, as_on: date | None = None
+    stmt: Select,
+    direction: str | None = None,
+    as_on: date | None = None,
+    party: str | None = None,
 ) -> Select:
     """The one definition of "an open bill" — shared by the list and the sum."""
     stmt = stmt.where(models.Bill.pending_amount != 0)
@@ -396,14 +399,41 @@ def _open_bills_filter(
         stmt = stmt.where(
             (models.Bill.bill_date.is_(None)) | (models.Bill.bill_date <= as_on)
         )
+    if party:
+        stmt = stmt.where(models.Bill.party_ledger.ilike(f"%{party}%"))
     return stmt
 
 
 def list_bills(
-    session: Session, direction: str | None = None, as_on: date | None = None
+    session: Session,
+    direction: str | None = None,
+    as_on: date | None = None,
+    party: str | None = None,
 ) -> list[models.Bill]:
-    stmt = _open_bills_filter(select(models.Bill), direction, as_on)
+    stmt = _open_bills_filter(select(models.Bill), direction, as_on, party)
     return list(session.scalars(stmt.order_by(models.Bill.due_date)))
+
+
+def rank_bills_by_party(
+    session: Session, direction: str | None = None, as_on: date | None = None
+) -> list[tuple[str, Decimal, int]]:
+    """Return open-bill totals grouped by party, largest balance first."""
+    stmt = _open_bills_filter(
+        select(
+            models.Bill.party_ledger,
+            func.sum(models.Bill.pending_amount).label("total_pending"),
+            func.count(models.Bill.id).label("open_bill_count"),
+        ),
+        direction,
+        as_on,
+    ).group_by(models.Bill.party_ledger)
+    stmt = stmt.order_by(
+        func.sum(models.Bill.pending_amount).desc(), models.Bill.party_ledger.asc()
+    )
+    return [
+        (party, Decimal(total or 0), int(count))
+        for party, total, count in session.execute(stmt)
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -529,10 +559,13 @@ def table_counts(session: Session) -> dict[str, int]:
 
 
 def sum_pending_bills(
-    session: Session, direction: str, as_on: date | None = None
+    session: Session,
+    direction: str,
+    as_on: date | None = None,
+    party: str | None = None,
 ) -> Decimal:
     """Total pending over exactly the bills ``list_bills`` would return."""
     stmt = _open_bills_filter(
-        select(func.sum(models.Bill.pending_amount)), direction, as_on
+        select(func.sum(models.Bill.pending_amount)), direction, as_on, party
     )
     return Decimal(session.scalar(stmt) or 0)

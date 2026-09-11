@@ -276,6 +276,16 @@ class BillList(BaseModel):
     total_pending: Decimal
 
 
+class PartyBillRanking(BaseModel):
+    party_ledger: str
+    total_pending: Decimal
+    open_bill_count: int
+
+
+class PartyBillRankingList(BaseModel):
+    items: list[PartyBillRanking]
+
+
 # --------------------------------------------------------------------------
 # Dashboard
 # --------------------------------------------------------------------------

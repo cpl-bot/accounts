@@ -10,7 +10,15 @@ from ..db import repo
 from ..services import aggregates
 from .deps import SessionDep
 from .errors import ApiError
-from .schemas import BillList, BillOut, VoucherDetail, VoucherList, VoucherSummary
+from .schemas import (
+    BillList,
+    BillOut,
+    PartyBillRanking,
+    PartyBillRankingList,
+    VoucherDetail,
+    VoucherList,
+    VoucherSummary,
+)
 
 router = APIRouter(tags=["vouchers"])
 
@@ -50,11 +58,39 @@ def bills(
     session: SessionDep,
     direction: str = Query("payable", pattern="^(payable|receivable)$"),
     as_on: date | None = None,
+    party: str | None = None,
 ) -> BillList:
     as_on = as_on or date.today()
-    rows = repo.list_bills(session, direction=direction, as_on=as_on)
+    rows = repo.list_bills(session, direction=direction, as_on=as_on, party=party)
     return BillList(
         items=[BillOut.model_validate(r) for r in rows],
         buckets=aggregates.aging_buckets(session, direction, as_on),
-        total_pending=repo.sum_pending_bills(session, direction, as_on=as_on),
+        total_pending=repo.sum_pending_bills(
+            session, direction, as_on=as_on, party=party
+        ),
+    )
+
+
+@router.get(
+    "/bills/by-party",
+    response_model=PartyBillRankingList,
+    summary="Open bills ranked by party outstanding",
+)
+def bills_by_party(
+    session: SessionDep,
+    direction: str = Query("payable", pattern="^(payable|receivable)$"),
+    as_on: date | None = None,
+) -> PartyBillRankingList:
+    as_on = as_on or date.today()
+    return PartyBillRankingList(
+        items=[
+            PartyBillRanking(
+                party_ledger=party,
+                total_pending=total_pending,
+                open_bill_count=open_bill_count,
+            )
+            for party, total_pending, open_bill_count in repo.rank_bills_by_party(
+                session, direction=direction, as_on=as_on
+            )
+        ]
     )
