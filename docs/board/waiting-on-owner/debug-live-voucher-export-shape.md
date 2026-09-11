@@ -23,3 +23,11 @@ Do not own: middleware implementation files, Tally configuration, production wri
 Out of scope: changing Tally data, testing imports, exporting an unbounded fiscal year, or implementing the production client.
 
 Depends on: none.
+
+## Grooming note (2026-09-11)
+
+`docs/board/fixtures/fixture1_daybook_vouchers_anon.xml` is available, and the
+dependent bounded Voucher implementation has independently proven a typed,
+one-day live request. This card still lacks the requested capture metadata:
+TallyPrime release, elapsed time, and a matching Day Book count. Keep it
+waiting until that evidence is recorded or the owner explicitly waives it.

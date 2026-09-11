@@ -27,3 +27,12 @@ Depends on: none.
 ## input from owner:
 
 all required fixtures are in docs/board/fixtures/
+
+## Outcome (2026-09-11)
+
+Owner-provided anonymized fixtures are available at
+`docs/board/fixtures/fixture2_bills_payable_anon.xml` and
+`docs/board/fixtures/fixture2_bills_receivable_anon.xml`. The dependent bill
+snapshot work is landed in `dev-bill-data-snapshots`; its read-only office-Tally
+validation reconciled payable 1,170 rows / 140003937.02 pending and receivable
+1,131 rows / 170261473.92 pending exactly with SQLite.

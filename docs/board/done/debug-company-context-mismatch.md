@@ -26,3 +26,9 @@ Depends on: none.
 ## product decision from owner
 `Nivana Healthcare Pvt. Ltd.` was just a placeholder example.
 Pick the company name from Tally and use the value in the section
+
+## Outcome (2026-09-11)
+
+Decision resolved: the displayed company must be the currently selected Tally
+company, not the Nivana placeholder. Follow-on implementation is captured in
+`docs/board/intake/fix-the-name-of-the-company-as-per-tally.md`.
