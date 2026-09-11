@@ -29,3 +29,20 @@ Depends on: `dev-bounded-voucher-collection`, `dev-bill-data-snapshots`.
 **Nextjs App** is running and accessible on localhost:3000
 
 ![shot](docs/board-assets/20260910-183014-65d5.png)
+
+Outcome (2026-09-11): Added validated `--from-date`/`--to-date` options to
+`scripts/validate_db_sync.py`, forwarded them to `SyncPuller.run()`, and made
+any non-success sync run fail validation. Middleware gates passed: Ruff and
+394 tests. The bounded read-only office pull for `2026-04-01` through
+`2026-09-10` succeeded with 3,475 vouchers, 14,561 voucher ledger entries,
+2,303 bills, and exact ledger and bill reconciliations. The authenticated
+middleware and Next.js proxy overview responses both returned revenue
+`1556725.00`, cost of sales `123623.00`, and net profit `1433103.80`.
+
+The initial migration step was blocked by the pre-existing replica schema
+having tables without a usable Alembic version state; the successful pull used
+`--skip-migrate` against that existing schema. The documented `pnpm dev`
+command was blocked by the worktree's external `node_modules` symlink and
+non-interactive pnpm 11 module purge, so Next.js was started with its installed
+webpack binary. HTTP page/proxy verification passed; visual browser
+verification was unavailable in this API session.
