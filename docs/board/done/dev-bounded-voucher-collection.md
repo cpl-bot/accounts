@@ -38,3 +38,7 @@ Depends on: `dev-reject-tally-protocol-errors`, `debug-live-voucher-export-shape
 ## Live validation failed (2026-09-11)
 
 The read-only office-Tally pull reached the derived `TalaiVoucher` request, but Tally returned 3,486 parsed rows. The client-side date safeguard persisted only 73 rows in the requested overlap window, so replica data is protected, but the required server-side date bound is not working. Investigate and correct the live TDL request shape before this card can close.
+
+## Live validation passed (2026-09-11)
+
+The ignored shape was isolated to untyped static date variables. Against the read-only office endpoint `http://192.168.10.25:9000` and company `Vigyapan Mart Pvt.Ltd. - (from 1-Apr-23)`, a one-day request for `2026-09-11` returned 3,486 rows with observed dates `2026-04-01..2026-09-11` before the fix. The same request with `SVFROMDATE TYPE="Date"` and `SVTODATE TYPE="Date"` returned 11 rows, all dated `2026-09-11`; a fresh post-change pull returned 12 rows, also all dated `2026-09-11`. No write action was sent.
