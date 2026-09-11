@@ -35,6 +35,6 @@ Depends on: `dev-bounded-voucher-collection`, `debug-live-bill-export-shape`.
 - A failed direction preserves its existing snapshot.
 - Middleware Ruff and pytest passed independently (389 tests).
 
-## Waiting on owner
+## Live validation completed (2026-09-11)
 
-Run read-only payable and receivable pulls against the office Tally, then reconcile returned counts and pending totals with the corresponding Tally reports.
+The read-only office-Tally pull reconciled exactly with SQLite: payable 1,170 rows / 140003937.02 pending and receivable 1,131 rows / 170261473.92 pending.

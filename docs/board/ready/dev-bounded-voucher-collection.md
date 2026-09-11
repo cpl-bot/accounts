@@ -35,6 +35,6 @@ Depends on: `dev-reject-tally-protocol-errors`, `debug-live-voucher-export-shape
 - REMOTEID read-back queries the fiscal year containing the imported voucher date, including a backdated regression test.
 - Middleware Ruff and pytest passed independently (383 tests).
 
-## Waiting on owner
+## Live validation failed (2026-09-11)
 
-Run one read-only bounded pull against the office Tally and confirm voucher rows and ledger entries persist for the requested date range.
+The read-only office-Tally pull reached the derived `TalaiVoucher` request, but Tally returned 3,486 parsed rows. The client-side date safeguard persisted only 73 rows in the requested overlap window, so replica data is protected, but the required server-side date bound is not working. Investigate and correct the live TDL request shape before this card can close.
